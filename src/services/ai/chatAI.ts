@@ -2,7 +2,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(
-  process.env.EXPO_PUBLIC_GEMINI_API_KEY || ""
+  process.env.EXPO_PUBLIC_GEMINI_API_KEY || "",
 );
 
 const chatModel = genAI.getGenerativeModel({
@@ -12,14 +12,14 @@ const chatModel = genAI.getGenerativeModel({
 // Types
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: number;
-  emotion?: 'happy' | 'thinking' | 'excited' | 'sad';
+  emotion?: "happy" | "thinking" | "excited" | "sad";
 }
 
 export interface ChatContext {
-  className: 'science' | 'coding' | 'history';
+  className: "science" | "coding" | "history";
   currentTopic?: string;
   recentLessons: string[];
   userAge: number;
@@ -63,8 +63,8 @@ Topics you love to talk about:
 - Simple physics and chemistry
 
 Make science feel like magic that can be explained!
-Recent lessons: ${context.recentLessons.join(', ') || 'None yet'}
-Current topic: ${context.currentTopic || 'General science'}
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General science"}
 `,
     coding: `
 You're teaching CODING! 💻
@@ -78,8 +78,8 @@ Topics you love to talk about:
 - Cool things they can build
 
 Make coding feel like giving instructions to a helpful robot!
-Recent lessons: ${context.recentLessons.join(', ') || 'None yet'}
-Current topic: ${context.currentTopic || 'General coding'}
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General coding"}
 `,
     history: `
 You're teaching HISTORY! 📚
@@ -93,9 +93,9 @@ Topics you love to talk about:
 - How things have changed over time
 
 Make history feel like time-traveling adventures!
-Recent lessons: ${context.recentLessons.join(', ') || 'None yet'}
-Current topic: ${context.currentTopic || 'General history'}
-`
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General history"}
+`,
   };
 
   return basePrompt + classPrompts[context.className];
@@ -109,22 +109,22 @@ export const getSuggestedQuestions = (context: ChatContext): string[] => {
       "How do plants eat?",
       "What are stars made of? ⭐",
       "Why do we need to sleep?",
-      "How do birds fly? 🦅"
+      "How do birds fly? 🦅",
     ],
     coding: [
       "What is coding? 💻",
       "How do I make a game?",
       "What's a variable?",
       "Can I code on my phone? 📱",
-      "How do apps work?"
+      "How do apps work?",
     ],
     history: [
       "Who invented the wheel? 🛞",
       "How did people write long ago?",
       "What did kids play with in the past? 🎮",
       "Who was the first astronaut? 🚀",
-      "How were pyramids built?"
-    ]
+      "How were pyramids built?",
+    ],
   };
 
   return suggestions[context.className] || [];
@@ -133,20 +133,20 @@ export const getSuggestedQuestions = (context: ChatContext): string[] => {
 // Main chat function
 export const sendChatMessage = async (
   message: string,
-  context: ChatContext
-): Promise<{ response: string; emotion: ChatMessage['emotion'] }> => {
+  context: ChatContext,
+): Promise<{ response: string; emotion: ChatMessage["emotion"] }> => {
   try {
     // Build conversation history for context
     const conversationContext = context.conversationHistory
       .slice(-6) // Last 6 messages for context
-      .map(msg => `${msg.role === 'user' ? 'Child' : 'Ruko'}: ${msg.content}`)
-      .join('\n');
+      .map((msg) => `${msg.role === "user" ? "Child" : "Ruko"}: ${msg.content}`)
+      .join("\n");
 
     const fullPrompt = `
 ${getSystemPrompt(context)}
 
 Recent conversation:
-${conversationContext || 'This is the start of the conversation.'}
+${conversationContext || "This is the start of the conversation."}
 
 Child's new message: ${message}
 
@@ -161,42 +161,46 @@ Respond as Ruko. Be helpful, encouraging, and age-appropriate. Keep it SHORT (2-
 
     return {
       response: responseText,
-      emotion
+      emotion,
     };
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error("Chat error:", error);
     return {
-      response: "Oops! My circuits got confused for a second. Can you ask that again? 🤖",
-      emotion: 'thinking'
+      response:
+        "Oops! My circuits got confused for a second. Can you ask that again? 🤖",
+      emotion: "thinking",
     };
   }
 };
 
 // Determine Ruko's emotion from the conversation
-const determineEmotion = (response: string, userMessage: string): ChatMessage['emotion'] => {
+const determineEmotion = (
+  response: string,
+  userMessage: string,
+): ChatMessage["emotion"] => {
   const responseLC = response.toLowerCase();
   const userLC = userMessage.toLowerCase();
 
   // Excited patterns
   if (
-    responseLC.includes('wow') ||
-    responseLC.includes('amazing') ||
-    responseLC.includes('awesome') ||
-    responseLC.includes('!') && responseLC.includes('cool') ||
-    responseLC.includes('exciting')
+    responseLC.includes("wow") ||
+    responseLC.includes("amazing") ||
+    responseLC.includes("awesome") ||
+    (responseLC.includes("!") && responseLC.includes("cool")) ||
+    responseLC.includes("exciting")
   ) {
-    return 'excited';
+    return "excited";
   }
 
   // Thinking patterns
   if (
-    responseLC.includes('hmm') ||
-    responseLC.includes('let me think') ||
-    responseLC.includes('interesting question') ||
-    userLC.includes('why') ||
-    userLC.includes('how')
+    responseLC.includes("hmm") ||
+    responseLC.includes("let me think") ||
+    responseLC.includes("interesting question") ||
+    userLC.includes("why") ||
+    userLC.includes("how")
   ) {
-    return 'thinking';
+    return "thinking";
   }
 
   // Sad patterns (when child is struggling or confused)
@@ -207,22 +211,23 @@ const determineEmotion = (response: string, userMessage: string): ChatMessage['e
     responseLC.includes("it's okay") ||
     responseLC.includes("don't worry")
   ) {
-    return 'sad';
+    return "sad";
   }
 
   // Default happy
-  return 'happy';
+  return "happy";
 };
 
 // Get explanation for a specific topic
 export const explainTopic = async (
   topic: string,
   context: ChatContext,
-  depth: 'simple' | 'detailed' = 'simple'
+  depth: "simple" | "detailed" = "simple",
 ): Promise<string> => {
-  const depthPrompt = depth === 'simple'
-    ? 'Explain in ONE simple sentence that a young child can understand.'
-    : 'Explain in 2-3 sentences with a fun example.';
+  const depthPrompt =
+    depth === "simple"
+      ? "Explain in ONE simple sentence that a young child can understand."
+      : "Explain in 2-3 sentences with a fun example.";
 
   const prompt = `
 You are Ruko teaching ${context.className} to a ${context.userAge}-year-old.
@@ -238,15 +243,13 @@ Be enthusiastic and use an analogy they can relate to.
     const result = await chatModel.generateContent(prompt);
     return result.response.text().trim();
   } catch (error) {
-    console.error('Explanation error:', error);
+    console.error("Explanation error:", error);
     return `${topic} is a really cool topic! Let me think about the best way to explain it... 🤔`;
   }
 };
 
 // Get a fun fact related to current topic
-export const getFunFact = async (
-  context: ChatContext
-): Promise<string> => {
+export const getFunFact = async (context: ChatContext): Promise<string> => {
   const topic = context.currentTopic || context.className;
 
   const prompt = `
@@ -265,7 +268,7 @@ Start with "Did you know..."
     const result = await chatModel.generateContent(prompt);
     return result.response.text().trim();
   } catch (error) {
-    console.error('Fun fact error:', error);
+    console.error("Fun fact error:", error);
     return "Did you know... there's so much cool stuff to learn? Let's discover it together! 🌟";
   }
 };
@@ -275,7 +278,7 @@ export const handleFollowUp = async (
   originalQuestion: string,
   followUpQuestion: string,
   originalAnswer: string,
-  context: ChatContext
+  context: ChatContext,
 ): Promise<string> => {
   const prompt = `
 You are Ruko. A ${context.userAge}-year-old asked: "${originalQuestion}"
@@ -291,18 +294,24 @@ Keep it SHORT (2-3 sentences max).
     const result = await chatModel.generateContent(prompt);
     return result.response.text().trim();
   } catch (error) {
-    console.error('Follow-up error:', error);
+    console.error("Follow-up error:", error);
     return "Great follow-up question! Let me explain more... 🤔";
   }
 };
 
 // Safety check for inappropriate content
-export const checkMessageSafety = (message: string): { safe: boolean; reason?: string } => {
+export const checkMessageSafety = (
+  message: string,
+): { safe: boolean; reason?: string } => {
   const lowerMsg = message.toLowerCase();
 
   // Check for inappropriate content
   const inappropriatePatterns = [
-    'violence', 'weapon', 'hurt', 'kill', 'death',
+    "violence",
+    "weapon",
+    "hurt",
+    "kill",
+    "death",
     // Add more as needed, but be careful not to block legitimate science questions
   ];
 
@@ -310,17 +319,17 @@ export const checkMessageSafety = (message: string): { safe: boolean; reason?: s
     if (lowerMsg.includes(pattern)) {
       // Allow scientific context
       if (
-        lowerMsg.includes('dinosaur') ||
-        lowerMsg.includes('extinct') ||
-        lowerMsg.includes('cell death') ||
-        lowerMsg.includes('star death')
+        lowerMsg.includes("dinosaur") ||
+        lowerMsg.includes("extinct") ||
+        lowerMsg.includes("cell death") ||
+        lowerMsg.includes("star death")
       ) {
         continue;
       }
 
       return {
         safe: false,
-        reason: "Let's talk about something more fun and positive! 🌟"
+        reason: "Let's talk about something more fun and positive! 🌟",
       };
     }
   }
@@ -336,22 +345,22 @@ export const getConversationStarters = (context: ChatContext): string[] => {
       "How does my brain work?",
       "Why do we have different seasons?",
       "What's the biggest animal ever?",
-      "How do magnets work?"
+      "How do magnets work?",
     ],
     coding: [
       "What's the first thing I should learn?",
       "Can I make my own game?",
       "How does a computer think?",
       "What language should I start with?",
-      "How do robots work? 🤖"
+      "How do robots work? 🤖",
     ],
     history: [
       "What was life like 100 years ago?",
       "Who was the first person to fly?",
       "How did people communicate long ago?",
       "What did ancient kids do for fun?",
-      "When was the internet invented?"
-    ]
+      "When was the internet invented?",
+    ],
   };
 
   return starters[context.className] || [];

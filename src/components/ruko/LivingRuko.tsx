@@ -7,7 +7,7 @@ import {
   Platform,
   Dimensions,
   PanResponder,
-  Animated as RNAnimated, // Standard React Native Animated
+  Animated as RNAnimated,
   Easing as RNEasing,
 } from "react-native";
 import Svg, {
@@ -30,14 +30,33 @@ import Animated, {
   withSpring,
   Easing,
   cancelAnimation,
-  useAnimatedProps,
   runOnJS,
 } from "react-native-reanimated";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const isWeb = Platform.OS === "web";
 
 // --- Types ---
 type TimeoutId = ReturnType<typeof setTimeout>;
+type Emotion =
+  | "happy"
+  | "sad"
+  | "angry"
+  | "listening"
+  | "thinking"
+  | "excited"
+  | "celebrating"
+  | "crying"
+  | "curious"
+  | "sleepy"
+  | "confused";
+
+interface LivingRukoProps {
+  emotion?: Emotion;
+  size?: number;
+  onPress?: () => void;
+  enableMouseTracking?: boolean;
+}
 
 // Face Variations
 const FACE_VARIATIONS: Record<string, any[]> = {
@@ -98,16 +117,6 @@ const FACE_VARIATIONS: Record<string, any[]> = {
   ],
 };
 
-export type Emotion = keyof typeof FACE_VARIATIONS;
-
-interface LivingRukoProps {
-  emotion?: Emotion;
-  size?: number;
-  onPress?: () => void;
-  enableMouseTracking?: boolean;
-}
-
-const isWeb = Platform.OS === "web";
 let globalMouseX = SCREEN_WIDTH / 2;
 let globalMouseY = SCREEN_HEIGHT / 2;
 let mouseListenerAdded = false;
@@ -122,9 +131,6 @@ const addMouseListener = () => {
   }
 };
 
-const AnimatedG = Animated.createAnimatedComponent(G);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
 export default function LivingRuko({
   emotion = "happy",
   size = 120,
@@ -135,7 +141,6 @@ export default function LivingRuko({
   const [tearDrops, setTearDrops] = useState<
     { id: number; x: number; y: number }[]
   >([]);
-
   const containerRef = useRef<View>(null);
 
   // Shared values
@@ -231,7 +236,7 @@ export default function LivingRuko({
             const clampedX = Math.max(-1, Math.min(1, offsetX));
             const clampedY = Math.max(-1, Math.min(1, offsetY));
 
-            eyeLeftX.value = withSpring(clampedX * 3, {
+            eyeLeftX.value = withSpring(clampedX * 2, {
               damping: 20,
               stiffness: 100,
             });
@@ -239,7 +244,7 @@ export default function LivingRuko({
               damping: 20,
               stiffness: 100,
             });
-            eyeRightX.value = withSpring(clampedX * 3, {
+            eyeRightX.value = withSpring(clampedX * 2, {
               damping: 20,
               stiffness: 100,
             });
@@ -433,6 +438,9 @@ export default function LivingRuko({
     variations && variations[currentVariation] ? currentVariation : 0;
   const face = variations[safeIndex];
 
+  // --- STYLES ---
+
+  // Main container bounce/rotate
   const containerStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: breathY.value + bodyBounce.value },
@@ -441,11 +449,11 @@ export default function LivingRuko({
     ],
   }));
 
+  // Eyes (Smaller now: 6px instead of 10px)
   const leftEyeStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: eyeLeftY.value + (face?.eyeOffsetY || 0) },
       { scaleY: blinkState.value },
-      { scaleX: blinkState.value > 1 ? blinkState.value : 1 },
     ],
     opacity: emotion === "sleepy" ? 0.6 : 1,
   }));
@@ -454,7 +462,6 @@ export default function LivingRuko({
     transform: [
       { translateY: eyeRightY.value + (face?.eyeOffsetY || 0) },
       { scaleY: blinkState.value },
-      { scaleX: blinkState.value > 1 ? blinkState.value : 1 },
     ],
     opacity: emotion === "sleepy" ? 0.6 : 1,
   }));
@@ -470,41 +477,58 @@ export default function LivingRuko({
     ],
   }));
 
-  // FIX: Stable Rotation for SVG Elements (avoiding matrix glitches on Android)
-  // We use Translate -> Rotate -> Inverse Translate to simulate transform-origin
+  // Arms - Using standard View transforms (Stable on Web)
+  // Pivot points adjusted for the viewBox coordinates mapped to size
+  const leftArmStyle = useAnimatedStyle(() => {
+    // Pivot at shoulder (35, 90 in viewBox coords)
+    // We need to map viewBox (200x200) to actual pixels (size)
+    const scale = size / 200;
+    const originX = 35 * scale;
+    const originY = 90 * scale;
 
-  // Pivot for antenna: 100, 35 (top of head)
-  const antennaAnimatedProps = useAnimatedProps(() => ({
-    transform: [
-      { translateX: 100 },
-      { translateY: 35 },
-      { rotate: `${antennaWiggle.value}deg` },
-      { translateX: -100 },
-      { translateY: -35 },
-    ],
-  }));
+    return {
+      transform: [
+        { translateX: originX },
+        { translateY: originY },
+        { rotate: `${armWaveLeft.value}deg` },
+        { translateX: -originX },
+        { translateY: -originY },
+      ],
+    };
+  });
 
-  // Pivot for Left Arm: 35, 90 (shoulder position)
-  const leftArmAnimatedProps = useAnimatedProps(() => ({
-    transform: [
-      { translateX: 35 },
-      { translateY: 90 },
-      { rotate: `${armWaveLeft.value}deg` },
-      { translateX: -35 },
-      { translateY: -90 },
-    ],
-  }));
+  const rightArmStyle = useAnimatedStyle(() => {
+    const scale = size / 200;
+    const originX = 165 * scale;
+    const originY = 90 * scale;
 
-  // Pivot for Right Arm: 165, 90 (shoulder position)
-  const rightArmAnimatedProps = useAnimatedProps(() => ({
-    transform: [
-      { translateX: 165 },
-      { translateY: 90 },
-      { rotate: `${armWaveRight.value}deg` },
-      { translateX: -165 },
-      { translateY: -90 },
-    ],
-  }));
+    return {
+      transform: [
+        { translateX: originX },
+        { translateY: originY },
+        { rotate: `${armWaveRight.value}deg` },
+        { translateX: -originX },
+        { translateY: -originY },
+      ],
+    };
+  });
+
+  // Antenna - Also moved to View wrapper for stability
+  const antennaStyle = useAnimatedStyle(() => {
+    const scale = size / 200;
+    const originX = 100 * scale;
+    const originY = 35 * scale; // Top of head
+
+    return {
+      transform: [
+        { translateX: originX },
+        { translateY: originY },
+        { rotate: `${antennaWiggle.value}deg` },
+        { translateX: -originX },
+        { translateY: -originY },
+      ],
+    };
+  });
 
   const getGlowColor = () => {
     switch (emotion) {
@@ -523,6 +547,8 @@ export default function LivingRuko({
     }
   };
 
+  const glowColor = getGlowColor();
+
   return (
     <View
       ref={containerRef}
@@ -535,7 +561,98 @@ export default function LivingRuko({
         {...panResponder.panHandlers}
       >
         <Animated.View style={[styles.rukoContainer, containerStyle]}>
-          <Svg width={size} height={size} viewBox="0 0 200 200">
+          {/* --- ARMS (Wrapped in Animated.View for stable transforms) --- */}
+          <Animated.View
+            style={[
+              styles.armContainer,
+              { width: size, height: size },
+              leftArmStyle,
+            ]}
+          >
+            <Svg
+              width={size}
+              height={size}
+              viewBox="0 0 200 200"
+              style={StyleSheet.absoluteFill}
+            >
+              <Path
+                d="M 35 90 Q 10 90 10 60"
+                stroke="#E65100"
+                strokeWidth="8"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </Svg>
+          </Animated.View>
+
+          <Animated.View
+            style={[
+              styles.armContainer,
+              { width: size, height: size },
+              rightArmStyle,
+            ]}
+          >
+            <Svg
+              width={size}
+              height={size}
+              viewBox="0 0 200 200"
+              style={StyleSheet.absoluteFill}
+            >
+              <Path
+                d="M 165 90 Q 190 90 190 60"
+                stroke="#E65100"
+                strokeWidth="8"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </Svg>
+          </Animated.View>
+
+          {/* --- ANTENNA (Wrapped in Animated.View) --- */}
+          <Animated.View
+            style={[
+              styles.armContainer,
+              { width: size, height: size },
+              antennaStyle,
+            ]}
+          >
+            <Svg
+              width={size}
+              height={size}
+              viewBox="0 0 200 200"
+              style={StyleSheet.absoluteFill}
+            >
+              <G>
+                <Line
+                  x1="100"
+                  y1="45"
+                  x2="100"
+                  y2="25"
+                  stroke="#424242"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
+                <Circle cx="100" cy="20" r="8" fill={glowColor} />
+                <Circle
+                  cx="100"
+                  cy="20"
+                  r="12"
+                  fill="none"
+                  stroke={glowColor}
+                  strokeWidth="2"
+                  opacity={0.5}
+                />
+              </G>
+            </Svg>
+          </Animated.View>
+
+          {/* --- MAIN BODY (Static SVG) --- */}
+          <Svg
+            width={size}
+            height={size}
+            viewBox="0 0 200 200"
+            style={StyleSheet.absoluteFill}
+          >
             <Defs>
               <RadialGradient id="bodyGradient" cx="50%" cy="50%" r="50%">
                 <Stop offset="0%" stopColor="#FFB74D" />
@@ -547,53 +664,7 @@ export default function LivingRuko({
               </RadialGradient>
             </Defs>
 
-            {/* Left Arm */}
-            <AnimatedG animatedProps={leftArmAnimatedProps}>
-              <Path
-                d="M 35 90 Q 10 90 10 60"
-                stroke="#E65100"
-                strokeWidth="8"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </AnimatedG>
-
-            {/* Right Arm */}
-            <AnimatedG animatedProps={rightArmAnimatedProps}>
-              <Path
-                d="M 165 90 Q 190 90 190 60"
-                stroke="#E65100"
-                strokeWidth="8"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </AnimatedG>
-
-            {/* Antenna */}
-            <AnimatedG animatedProps={antennaAnimatedProps}>
-              <Line
-                x1="100"
-                y1="45"
-                x2="100"
-                y2="25"
-                stroke="#424242"
-                strokeWidth="4"
-                strokeLinecap="round"
-              />
-              <Circle cx="100" cy="20" r="8" fill={getGlowColor()} />
-              <AnimatedCircle
-                cx="100"
-                cy="20"
-                r="12"
-                fill="none"
-                stroke={getGlowColor()}
-                strokeWidth="2"
-                animatedProps={useAnimatedProps(() => ({
-                  opacity: glowIntensity.value * 0.5,
-                }))}
-              />
-            </AnimatedG>
-
+            {/* Body Rect */}
             <Rect
               x="40"
               y="50"
@@ -612,6 +683,8 @@ export default function LivingRuko({
               fill="white"
               opacity="0.2"
             />
+
+            {/* Screen */}
             <Rect
               x="60"
               y="70"
@@ -628,6 +701,7 @@ export default function LivingRuko({
               strokeLinecap="round"
             />
 
+            {/* Brows */}
             {face?.browTilt !== 0 && (
               <G>
                 <Line
@@ -653,6 +727,7 @@ export default function LivingRuko({
               </G>
             )}
 
+            {/* Mouth */}
             <Path
               d={face?.mouth || "M 85 105 Q 100 115 115 105"}
               stroke={
@@ -668,6 +743,7 @@ export default function LivingRuko({
               strokeLinejoin="round"
             />
 
+            {/* Cheeks */}
             {(emotion === "happy" ||
               emotion === "excited" ||
               emotion === "celebrating") && (
@@ -677,6 +753,7 @@ export default function LivingRuko({
               </>
             )}
 
+            {/* Thinking Bubble */}
             {emotion === "thinking" && (
               <Path
                 d="M 140 85 Q 142 90 140 95 Q 138 90 140 85"
@@ -685,6 +762,7 @@ export default function LivingRuko({
               />
             )}
 
+            {/* Confused Lines */}
             {emotion === "confused" && (
               <Path
                 d="M 135 60 L 145 50 M 140 60 L 140 45"
@@ -695,6 +773,7 @@ export default function LivingRuko({
             )}
           </Svg>
 
+          {/* --- EYES (Native Views - Smaller & Crisp) --- */}
           <Animated.View style={[styles.eye, styles.eyeLeft, leftEyeStyle]}>
             <View
               style={[styles.eyeBall, emotion === "angry" && styles.eyeAngry]}
@@ -711,6 +790,7 @@ export default function LivingRuko({
             </View>
           </Animated.View>
 
+          {/* --- TEARS --- */}
           {tearDrops.map((tear) => (
             <TearDrop
               key={tear.id}
@@ -739,8 +819,6 @@ const TearDrop = ({
   size: number;
   onComplete: () => void;
 }) => {
-  // FIX: Use standard RN Animated with useNativeDriver: FALSE to prevent crashes
-  // when nodes are unmounted or modified rapidly on Android.
   const translateY = useRef(new RNAnimated.Value(0)).current;
   const opacity = useRef(new RNAnimated.Value(1)).current;
 
@@ -750,21 +828,18 @@ const TearDrop = ({
         toValue: 40,
         duration: 1800,
         easing: RNEasing.linear,
-        useNativeDriver: false, // <--- CRITICAL FIX
+        useNativeDriver: false,
       }),
       RNAnimated.timing(opacity, {
         toValue: 0,
         duration: 1800,
         easing: RNEasing.linear,
-        useNativeDriver: false, // <--- CRITICAL FIX
+        useNativeDriver: false,
       }),
     ]).start(({ finished }) => {
-      if (finished) {
-        onComplete();
-      }
+      if (finished) onComplete();
     });
 
-    // Cleanup to prevent memory leaks if component unmounts
     return () => {
       translateY.stopAnimation();
       opacity.stopAnimation();
@@ -778,8 +853,8 @@ const TearDrop = ({
         {
           left: (x / 200) * size,
           top: (y / 200) * size,
-          opacity: opacity,
-          transform: [{ translateY: translateY }],
+          opacity,
+          transform: [{ translateY }],
         },
       ]}
     >
@@ -798,31 +873,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  eye: { position: "absolute", width: 10, height: 10, zIndex: 20 },
-  eyeLeft: { left: "40%", top: "45%", marginLeft: -5, marginTop: -5 },
-  eyeRight: { left: "60%", top: "45%", marginLeft: -5, marginTop: -5 },
+
+  // Arms/Antenna containers - Absolute fill to match SVG coordinate space
+  armContainer: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    pointerEvents: "none",
+  },
+
+  // Eyes - Smaller (6px instead of 10px)
+  eye: {
+    position: "absolute",
+    width: 6,
+    height: 6,
+    zIndex: 20,
+    // Center the eye based on percentage positions
+    marginLeft: -3,
+    marginTop: -3,
+  },
+  eyeLeft: { left: "42%", top: "46%" }, // Slightly adjusted for smaller size
+  eyeRight: { left: "58%", top: "46%" },
+
   eyeBall: {
     width: "100%",
     height: "100%",
-    borderRadius: 5,
+    borderRadius: 3, // Half of 6
     backgroundColor: "#4FC3F7",
     shadowColor: "#4FC3F7",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
-    shadowRadius: 4,
+    shadowRadius: 2,
     alignItems: "center",
     justifyContent: "center",
   },
   eyeAngry: {
     backgroundColor: "#FF5252",
     shadowColor: "#FF5252",
-    borderRadius: 2.5,
+    borderRadius: 1.5,
     transform: [{ scaleY: 0.6 }],
   },
   eyeShine: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
+    width: 2,
+    height: 2,
+    borderRadius: 1,
     backgroundColor: "white",
     opacity: 0.9,
   },

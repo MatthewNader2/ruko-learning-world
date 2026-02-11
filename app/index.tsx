@@ -82,10 +82,6 @@ export default function OnboardingScreen() {
     else if (step === 5) setRukoEmotion("thinking");
     else setRukoEmotion("happy");
 
-    // FIX: Removed the conflicting Animated.sequence here.
-    // The animateStepChange function handles the page transitions.
-    // This block was using useNativeDriver: false which caused the crash.
-
     // Ruko bounce animation (Keep this, it's safe)
     rukoBounce.setValue(0); // Reset before animating
     Animated.spring(rukoBounce, {
@@ -189,12 +185,13 @@ export default function OnboardingScreen() {
             </Text>
             <TouchableOpacity
               onPress={handleNext}
-              className="bg-indigo-600 w-full max-w-xs py-4 rounded-2xl shadow-lg shadow-indigo-200 active:scale-95"
+              className="bg-indigo-600 w-full max-w-xs py-4 rounded-2xl"
               style={{
                 shadowColor: "#6366f1",
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
                 shadowRadius: 8,
+                elevation: 4,
               }}
             >
               <Text className="text-white font-bold text-xl text-center">
@@ -349,7 +346,14 @@ export default function OnboardingScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleNext}
-                className="flex-[2] bg-indigo-600 py-4 rounded-2xl shadow-lg"
+                className="flex-[2] bg-indigo-600 py-4 rounded-2xl"
+                style={{
+                  shadowColor: "#6366f1",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
               >
                 <Text className="text-white font-bold text-lg text-center">
                   Continue ➡️
@@ -373,10 +377,12 @@ export default function OnboardingScreen() {
               onPress={() => setLearningStyle("visual")}
               className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${
                 learningStyle === "visual"
-                  ? "bg-violet-50 border-violet-500"
+                  ? "border-violet-500"
                   : "bg-white border-slate-100"
               }`}
               style={{
+                backgroundColor:
+                  learningStyle === "visual" ? "#f5f3ff" : "white",
                 shadowColor: learningStyle === "visual" ? "#8b5cf6" : "#000",
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: learningStyle === "visual" ? 0.1 : 0.05,
@@ -384,7 +390,10 @@ export default function OnboardingScreen() {
                 elevation: learningStyle === "visual" ? 2 : 1,
               }}
             >
-              <View className="w-12 h-12 rounded-xl bg-violet-100 items-center justify-center mr-4">
+              <View
+                className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                style={{ backgroundColor: "#ede9fe" }}
+              >
                 <Text className="text-2xl">👁️</Text>
               </View>
               <View className="flex-1">
@@ -402,7 +411,10 @@ export default function OnboardingScreen() {
                 </Text>
               </View>
               {learningStyle === "visual" && (
-                <View className="w-6 h-6 rounded-full bg-violet-500 items-center justify-center">
+                <View
+                  className="w-6 h-6 rounded-full items-center justify-center"
+                  style={{ backgroundColor: "#8b5cf6" }}
+                >
                   <Text className="text-white text-xs">✓</Text>
                 </View>
               )}
@@ -412,10 +424,12 @@ export default function OnboardingScreen() {
               onPress={() => setLearningStyle("reading")}
               className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${
                 learningStyle === "reading"
-                  ? "bg-blue-50 border-blue-500"
+                  ? "border-blue-500"
                   : "bg-white border-slate-100"
               }`}
               style={{
+                backgroundColor:
+                  learningStyle === "reading" ? "#eff6ff" : "white",
                 shadowColor: learningStyle === "reading" ? "#3b82f6" : "#000",
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: learningStyle === "reading" ? 0.1 : 0.05,
@@ -423,7 +437,10 @@ export default function OnboardingScreen() {
                 elevation: learningStyle === "reading" ? 2 : 1,
               }}
             >
-              <View className="w-12 h-12 rounded-xl bg-blue-100 items-center justify-center mr-4">
+              <View
+                className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                style={{ backgroundColor: "#dbeafe" }}
+              >
                 <Text className="text-2xl">📖</Text>
               </View>
               <View className="flex-1">
@@ -441,7 +458,10 @@ export default function OnboardingScreen() {
                 </Text>
               </View>
               {learningStyle === "reading" && (
-                <View className="w-6 h-6 rounded-full bg-blue-500 items-center justify-center">
+                <View
+                  className="w-6 h-6 rounded-full items-center justify-center"
+                  style={{ backgroundColor: "#3b82f6" }}
+                >
                   <Text className="text-white text-xs">✓</Text>
                 </View>
               )}
@@ -451,10 +471,12 @@ export default function OnboardingScreen() {
               onPress={() => setLearningStyle("mixed")}
               className={`p-5 mb-8 rounded-2xl border-2 flex-row items-center ${
                 learningStyle === "mixed"
-                  ? "bg-emerald-50 border-emerald-500"
+                  ? "border-emerald-500"
                   : "bg-white border-slate-100"
               }`}
               style={{
+                backgroundColor:
+                  learningStyle === "mixed" ? "#ecfdf5" : "white",
                 shadowColor: learningStyle === "mixed" ? "#10b981" : "#000",
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: learningStyle === "mixed" ? 0.1 : 0.05,
@@ -462,7 +484,10 @@ export default function OnboardingScreen() {
                 elevation: learningStyle === "mixed" ? 2 : 1,
               }}
             >
-              <View className="w-12 h-12 rounded-xl bg-emerald-100 items-center justify-center mr-4">
+              <View
+                className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                style={{ backgroundColor: "#d1fae5" }}
+              >
                 <Text className="text-2xl">🔄</Text>
               </View>
               <View className="flex-1">
@@ -480,7 +505,10 @@ export default function OnboardingScreen() {
                 </Text>
               </View>
               {learningStyle === "mixed" && (
-                <View className="w-6 h-6 rounded-full bg-emerald-500 items-center justify-center">
+                <View
+                  className="w-6 h-6 rounded-full items-center justify-center"
+                  style={{ backgroundColor: "#10b981" }}
+                >
                   <Text className="text-white text-xs">✓</Text>
                 </View>
               )}
@@ -497,7 +525,14 @@ export default function OnboardingScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={finishOnboarding}
-                className="flex-[2] bg-emerald-500 py-4 rounded-2xl shadow-lg shadow-emerald-200"
+                className="flex-[2] bg-emerald-500 py-4 rounded-2xl"
+                style={{
+                  shadowColor: "#10b981",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
               >
                 <Text className="text-white font-bold text-xl text-center">
                   Start Learning! 🌟

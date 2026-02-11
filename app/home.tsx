@@ -101,18 +101,27 @@ const ClassCard = ({
             <Text className="font-bold text-base text-slate-800 leading-tight">
               {title}
             </Text>
-            <Text className="text-slate-600 text-xs mt-1 opacity-80">
+            <Text
+              className="text-slate-600 text-xs mt-1"
+              style={{ opacity: 0.8 }}
+            >
               {isLocked ? "Locked • Coming soon" : subtitle}
             </Text>
           </View>
 
           <View className="absolute top-4 right-4">
             {isLocked ? (
-              <View className="w-6 h-6 rounded-full bg-black/10 items-center justify-center">
+              <View
+                className="w-6 h-6 rounded-full items-center justify-center"
+                style={{ backgroundColor: "rgba(0,0,0,0.1)" }}
+              >
                 <Text className="text-xs">🔒</Text>
               </View>
             ) : (
-              <View className="w-6 h-6 rounded-full bg-white/40 items-center justify-center">
+              <View
+                className="w-6 h-6 rounded-full items-center justify-center"
+                style={{ backgroundColor: "rgba(255,255,255,0.4)" }}
+              >
                 <Text className="text-xs">▶</Text>
               </View>
             )}
@@ -338,20 +347,41 @@ export default function HomeScreen() {
             }),
           })}
         >
-          <View className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
-          <View className="absolute -bottom-8 -left-8 w-24 h-24 bg-white/5 rounded-full" />
+          <View
+            className="absolute rounded-full"
+            style={{
+              top: -40,
+              right: -40,
+              width: 128,
+              height: 128,
+              backgroundColor: "rgba(255,255,255,0.1)",
+            }}
+          />
+          <View
+            className="absolute rounded-full"
+            style={{
+              bottom: -32,
+              left: -32,
+              width: 96,
+              height: 96,
+              backgroundColor: "rgba(255,255,255,0.05)",
+            }}
+          />
 
           <View className="flex-row items-center relative z-10">
             <View className="mr-4">
               <RukoAvatar emotion="happy" size={80} />
             </View>
             <View className="flex-1">
-              <View className="bg-white/10 p-4 rounded-2xl rounded-tl-none">
+              <View
+                className="p-4 rounded-2xl rounded-tl-none"
+                style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
+              >
                 <Text className="text-white font-bold text-lg leading-6">
                   "Ready to learn something amazing today?"
                 </Text>
               </View>
-              <Text className="text-indigo-200 text-xs mt-2 ml-1">
+              <Text className="text-xs mt-2 ml-1" style={{ color: "#c7d2fe" }}>
                 Tap me to say hello!
               </Text>
             </View>
@@ -360,7 +390,10 @@ export default function HomeScreen() {
 
         {/* Section Title */}
         <View className="flex-row items-center mb-5">
-          <View className="w-1 h-6 bg-indigo-500 rounded-full mr-3" />
+          <View
+            className="rounded-full mr-3"
+            style={{ width: 4, height: 24, backgroundColor: "#6366f1" }}
+          />
           <Text className="text-xl font-bold text-slate-800">
             Explore Classes
           </Text>
@@ -447,7 +480,10 @@ export default function HomeScreen() {
 
           <View className="flex-row justify-between">
             <View className="items-center flex-1">
-              <View className="w-14 h-14 rounded-2xl bg-indigo-50 items-center justify-center mb-2">
+              <View
+                className="w-14 h-14 rounded-2xl items-center justify-center mb-2"
+                style={{ backgroundColor: "rgba(99,102,241,0.1)" }}
+              >
                 <Text className="text-2xl">⭐</Text>
               </View>
               <Text className="text-2xl font-extrabold text-indigo-600">
@@ -457,7 +493,10 @@ export default function HomeScreen() {
             </View>
 
             <View className="items-center flex-1">
-              <View className="w-14 h-14 rounded-2xl bg-emerald-50 items-center justify-center mb-2">
+              <View
+                className="w-14 h-14 rounded-2xl items-center justify-center mb-2"
+                style={{ backgroundColor: "rgba(16,185,129,0.1)" }}
+              >
                 <Text className="text-2xl">📚</Text>
               </View>
               <Text className="text-2xl font-extrabold text-emerald-600">
@@ -469,7 +508,10 @@ export default function HomeScreen() {
             </View>
 
             <View className="items-center flex-1">
-              <View className="w-14 h-14 rounded-2xl bg-amber-50 items-center justify-center mb-2">
+              <View
+                className="w-14 h-14 rounded-2xl items-center justify-center mb-2"
+                style={{ backgroundColor: "rgba(245,158,11,0.1)" }}
+              >
                 <Text className="text-2xl">🪙</Text>
               </View>
               <Text className="text-2xl font-extrabold text-amber-600">

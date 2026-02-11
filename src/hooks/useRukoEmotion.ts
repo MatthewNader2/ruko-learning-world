@@ -1,7 +1,17 @@
 // src/hooks/useRukoEmotion.ts
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from "react";
 
-type Emotion = 'happy' | 'sad' | 'angry' | 'excited' | 'thinking' | 'listening' | 'celebrating' | 'crying' | 'curious' | 'sleepy';
+type Emotion =
+  | "happy"
+  | "sad"
+  | "angry"
+  | "excited"
+  | "thinking"
+  | "listening"
+  | "celebrating"
+  | "crying"
+  | "curious"
+  | "sleepy";
 
 interface UseRukoEmotionReturn {
   emotion: Emotion;
@@ -12,11 +22,24 @@ interface UseRukoEmotionReturn {
   reactToFailure: () => void;
 }
 
-const EMOTIONS: Emotion[] = ['happy', 'sad', 'angry', 'excited', 'thinking', 'listening', 'celebrating', 'crying', 'curious', 'sleepy'];
+const EMOTIONS: Emotion[] = [
+  "happy",
+  "sad",
+  "angry",
+  "excited",
+  "thinking",
+  "listening",
+  "celebrating",
+  "crying",
+  "curious",
+  "sleepy",
+];
 
-export function useRukoEmotion(initialEmotion: Emotion = 'happy'): UseRukoEmotionReturn {
+export function useRukoEmotion(
+  initialEmotion: Emotion = "happy",
+): UseRukoEmotionReturn {
   const [emotion, setEmotionState] = useState<Emotion>(initialEmotion);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setEmotion = useCallback((newEmotion: Emotion, duration?: number) => {
     setEmotionState(newEmotion);
@@ -27,7 +50,7 @@ export function useRukoEmotion(initialEmotion: Emotion = 'happy'): UseRukoEmotio
 
     if (duration) {
       timeoutRef.current = setTimeout(() => {
-        setEmotionState('happy');
+        setEmotionState("happy");
       }, duration);
     }
   }, []);
@@ -38,15 +61,15 @@ export function useRukoEmotion(initialEmotion: Emotion = 'happy'): UseRukoEmotio
   }, [setEmotion]);
 
   const celebrate = useCallback(() => {
-    setEmotion('celebrating', 2000);
+    setEmotion("celebrating", 2000);
   }, [setEmotion]);
 
   const reactToSuccess = useCallback(() => {
-    setEmotion('excited', 1500);
+    setEmotion("excited", 1500);
   }, [setEmotion]);
 
   const reactToFailure = useCallback(() => {
-    setEmotion('sad', 1500);
+    setEmotion("sad", 1500);
   }, [setEmotion]);
 
   return {

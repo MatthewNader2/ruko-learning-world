@@ -1,31 +1,25 @@
 // src/features/science-class/PhotosynthesisGame.tsx
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
-  Platform,
   Dimensions,
   Animated as RNAnimated,
   PanResponder,
-  GestureResponderEvent,
-  PanResponderGestureState,
+  Platform,
+  SafeAreaView,
+  Pressable,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   FadeIn,
-  FadeOut,
-  SlideInDown,
-  BounceIn,
   useSharedValue,
-  useAnimatedStyle,
   withSpring,
   withTiming,
   withRepeat,
   withSequence,
-  Easing,
-  runOnJS,
 } from "react-native-reanimated";
 import LivingRuko from "../../components/ruko/LivingRuko";
 import { useUserStore } from "../../store/userStore";
@@ -56,9 +50,9 @@ interface QuizQuestion {
 }
 
 interface GameState {
-  sunLevel: number; // 0-100
-  waterLevel: number; // 0-100
-  co2Level: number; // 0-100
+  sunLevel: number;
+  waterLevel: number;
+  co2Level: number;
   plantHealth: number;
   mistakes: string[];
 }
@@ -196,7 +190,6 @@ const QUIZ_QUESTIONS: Record<Difficulty, QuizQuestion[]> = {
   ],
 };
 
-// Wrong choices that kids might try
 const WRONG_CHOICES = {
   sunlight: [
     {
@@ -267,7 +260,29 @@ const WRONG_CHOICES = {
   ],
 };
 
-// Helper components for safe animations
+// --- HELPER COMPONENTS ---
+
+// Simple back button for consistent UI
+const GameBackButton = ({ onPress }: { onPress: () => void }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    style={
+      {
+        position: "absolute",
+        top: 40,
+        left: 20,
+        zIndex: 100,
+        backgroundColor: "rgba(255,255,255,0.8)",
+        padding: 10,
+        borderRadius: 20,
+        ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+      } as any
+    }
+  >
+    <Text style={{ fontSize: 24 }}>⬅️</Text>
+  </TouchableOpacity>
+);
+
 const FallingWaterDrop = ({
   x,
   y,
@@ -280,17 +295,13 @@ const FallingWaterDrop = ({
   const translateY = useRef(new RNAnimated.Value(0)).current;
 
   useEffect(() => {
-    const anim = RNAnimated.timing(translateY, {
+    RNAnimated.timing(translateY, {
       toValue: 400,
       duration: 800,
-      useNativeDriver: true, // EXPLICITLY TRUE
-    });
-
-    anim.start(({ finished }) => {
+      useNativeDriver: true,
+    }).start(({ finished }) => {
       if (finished) onFinish();
     });
-
-    return () => anim.stop();
   }, []);
 
   return (
@@ -322,24 +333,20 @@ const RisingBubble = ({
   const scale = useRef(new RNAnimated.Value(0)).current;
 
   useEffect(() => {
-    const anim = RNAnimated.parallel([
+    RNAnimated.parallel([
       RNAnimated.timing(translateY, {
         toValue: -200,
         duration: 2000,
-        useNativeDriver: true, // EXPLICITLY TRUE
+        useNativeDriver: true,
       }),
       RNAnimated.timing(scale, {
         toValue: 1,
         duration: 2000,
-        useNativeDriver: true, // EXPLICITLY TRUE
+        useNativeDriver: true,
       }),
-    ]);
-
-    anim.start(({ finished }) => {
+    ]).start(({ finished }) => {
       if (finished) onFinish();
     });
-
-    return () => anim.stop();
   }, []);
 
   return (
@@ -365,7 +372,8 @@ const RisingBubble = ({
 };
 
 export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
-  const { age, addXP, addCoins, level } = useUserStore();
+  const { level } = useUserStore();
+
   const {
     emotion: rukoEmotion,
     setEmotion: setRukoEmotion,
@@ -379,7 +387,6 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     "Welcome to the Science Lab! 🔬",
   );
 
-  // Game state
   const [gameState, setGameState] = useState<GameState>({
     sunLevel: 0,
     waterLevel: 0,
@@ -412,102 +419,164 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
   const plantRotate = useSharedValue(0);
   const sunGlow = useSharedValue(0);
 
-  const difficultyLevel = level < 3 ? "easy" : level < 6 ? "medium" : "hard";
-
   useEffect(() => {
-    setDifficulty(difficultyLevel);
-  }, [difficultyLevel]);
+    const newDifficulty = level < 3 ? "easy" : level < 6 ? "medium" : "hard";
+    setDifficulty(newDifficulty);
+  }, [level]);
 
-  // Pan responder for dragging plant
-  const panResponder = useRef(
+  // RESET PROGRESS LOGIC
+  useEffect(() => {
+    if (phase === "water") {
+      setWaterScore(0);
+      setGameState((prev) => ({ ...prev, waterLevel: 0 }));
+      setRukoMessage("The plant is thirsty! Tap to water it. 💧");
+    } else if (phase === "co2") {
+      setCo2Score(0);
+      setGameState((prev) => ({ ...prev, co2Level: 0 }));
+      setRukoMessage("Now it needs air! Add some CO₂. 🫧");
+    }
+  }, [phase]);
+
+  // Ref for position to avoid stale closures
+  const plantPosRef = useRef({ x: SCREEN_WIDTH / 2 - 40, y: 300 });
+  // Store start offset to fix dragging on different screen coordinates
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+
+  // WEB: Prevent text selection and customize cursor
+  const webStyles: any =
+    Platform.OS === "web"
+      ? {
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          msUserSelect: "none",
+          cursor: isDraggingRef.current ? "grabbing" : "grab",
+        }
+      : {};
+
+  // Re-create PanResponder to use the ref
+  // Re-create PanResponder to use the ref
+  const panResponderSafe = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        isDraggingRef.current = true;
+        dragOffset.current = {
+          x: plantPosRef.current.x,
+          y: plantPosRef.current.y,
+        };
+        setPlantPosition((prev) => ({ ...prev }));
+      },
       onPanResponderMove: (_, gestureState) => {
-        setPlantPosition({
-          x: Math.max(0, Math.min(SCREEN_WIDTH - 80, gestureState.moveX - 40)),
-          y: Math.max(
-            200,
-            Math.min(SCREEN_HEIGHT - 200, gestureState.moveY - 40),
-          ),
-        });
+        // Use fresh dimensions to handle web resizing better
+        const currentWidth = Dimensions.get("window").width;
+        const currentHeight = Dimensions.get("window").height;
+
+        const newX = Math.max(
+          0,
+          Math.min(currentWidth - 80, dragOffset.current.x + gestureState.dx),
+        );
+        const newY = Math.max(
+          0,
+          Math.min(currentHeight - 80, dragOffset.current.y + gestureState.dy),
+        );
+
+        plantPosRef.current = { x: newX, y: newY };
+        setPlantPosition({ x: newX, y: newY });
       },
       onPanResponderRelease: () => {
-        checkSunPosition();
+        isDraggingRef.current = false;
+        setPlantPosition((prev) => ({ ...prev }));
+
+        const { x, y } = plantPosRef.current;
+        const currentWidth = Dimensions.get("window").width;
+        const currentHeight = Dimensions.get("window").height;
+
+        // --- FIX: Align Collision Zones with Visual Styles ---
+
+        // Sun is visual at: right: 20, width: 150
+        // So Detection X = ScreenWidth - 20 (right margin) - 150 (width)
+        const sunZone = {
+          x: currentWidth - 170,
+          y: 100,
+          width: 150,
+          height: 150,
+        };
+
+        // Shadow is visual at: left: 20, bottom: 200
+        // Detection Y = ScreenHeight - 200 (bottom margin) - 150 (height)
+        const shadowZone = {
+          x: 20,
+          y: currentHeight - 350,
+          width: 150,
+          height: 150,
+        };
+
+        const plantCenter = { x: x + 40, y: y + 40 };
+
+        const inSun =
+          plantCenter.x > sunZone.x &&
+          plantCenter.x < sunZone.x + sunZone.width &&
+          plantCenter.y > sunZone.y &&
+          plantCenter.y < sunZone.y + sunZone.height;
+
+        const inShadow =
+          plantCenter.x > shadowZone.x &&
+          plantCenter.x < shadowZone.x + shadowZone.width &&
+          plantCenter.y > shadowZone.y &&
+          plantCenter.y < shadowZone.y + shadowZone.height;
+
+        if (inSun) {
+          setIsInSun(true);
+          setGameState((prev) => ({ ...prev, sunLevel: 100 }));
+          sunGlow.value = withRepeat(
+            withSequence(
+              withTiming(1, { duration: 500 }),
+              withTiming(0.5, { duration: 500 }),
+            ),
+            -1,
+            true,
+          );
+          plantScale.value = withSpring(1.2);
+          setRukoMessage("Perfect! The plant loves the sunlight! ☀️");
+          setRukoEmotion("excited");
+          setTimeout(() => setPhase("water"), 2000);
+        } else if (inShadow) {
+          setRukoMessage("Too dark here! The plant needs sunlight to grow! 🌑");
+          setRukoEmotion("sad");
+          plantRotate.value = withSequence(
+            withTiming(-5, { duration: 100 }),
+            withTiming(5, { duration: 100 }),
+            withTiming(0, { duration: 100 }),
+          );
+          setGameState((prev) => ({
+            ...prev,
+            mistakes: [...prev.mistakes, "Put plant in shadow"],
+            plantHealth: Math.max(0, prev.plantHealth - 10),
+          }));
+        }
       },
     }),
   ).current;
-
-  const checkSunPosition = () => {
-    // Sun area is top-right, shadow is bottom-left
-    const sunZone = { x: SCREEN_WIDTH * 0.6, y: 250, width: 150, height: 150 };
-    const shadowZone = { x: 50, y: 400, width: 150, height: 150 };
-
-    const plantCenter = {
-      x: plantPosition.x + 40,
-      y: plantPosition.y + 40,
-    };
-
-    const inSun =
-      plantCenter.x > sunZone.x &&
-      plantCenter.x < sunZone.x + sunZone.width &&
-      plantCenter.y > sunZone.y &&
-      plantCenter.y < sunZone.y + sunZone.height;
-
-    const inShadow =
-      plantCenter.x > shadowZone.x &&
-      plantCenter.x < shadowZone.x + shadowZone.width &&
-      plantCenter.y > shadowZone.y &&
-      plantCenter.y < shadowZone.y + shadowZone.height;
-
-    if (inSun) {
-      setIsInSun(true);
-      setGameState((prev) => ({ ...prev, sunLevel: 100 }));
-      sunGlow.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 500 }),
-          withTiming(0.5, { duration: 500 }),
-        ),
-        -1,
-        true,
-      );
-      plantScale.value = withSpring(1.2);
-      setRukoMessage("Perfect! The plant loves the sunlight! ☀️");
-      setRukoEmotion("excited");
-      setTimeout(() => setPhase("water"), 2000);
-    } else if (inShadow) {
-      setRukoMessage("Too dark here! The plant needs sunlight to grow! 🌑");
-      setRukoEmotion("sad");
-      plantRotate.value = withSequence(
-        withTiming(-5, { duration: 100 }),
-        withTiming(5, { duration: 100 }),
-        withTiming(0, { duration: 100 }),
-      );
-      setGameState((prev) => ({
-        ...prev,
-        mistakes: [...prev.mistakes, "Put plant in shadow"],
-        plantHealth: Math.max(0, prev.plantHealth - 10),
-      }));
-    }
-  };
 
   // Water mini-game
   const addWaterDrop = (x: number, y: number) => {
     const newDrop = { id: Date.now(), x, y };
     setWaterDrops((prev) => [...prev, newDrop]);
 
-    // Calculate if drop hits plant
     const plantZone = {
       x: SCREEN_WIDTH / 2 - 50,
-      y: 300,
       width: 100,
-      height: 100,
+      y: SCREEN_HEIGHT / 3,
     };
+
+    // Correct hit logic: Drop must be horizontally aligned
+    // AND starting above or on the plant top
     const hitsPlant =
       x > plantZone.x &&
       x < plantZone.x + plantZone.width &&
-      y > plantZone.y &&
-      y < plantZone.y + plantZone.height;
+      y < plantZone.y + 100;
 
     if (hitsPlant) {
       setWaterScore((prev) => {
@@ -516,7 +585,10 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
           setGameState((s) => ({ ...s, waterLevel: newScore }));
           setRukoMessage("Perfect amount of water! 💧");
           setRukoEmotion("happy");
-          setTimeout(() => setPhase("co2"), 1500);
+          // Small delay before transition to allow user to see success
+          if (newScore === 50 || newScore === 60) {
+            setTimeout(() => setPhase("co2"), 1500);
+          }
         } else if (newScore > 80) {
           setRukoMessage("Too much water! The plant is drowning! 🌊");
           setRukoEmotion("sad");
@@ -532,6 +604,14 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     setTimeout(() => {
       setWaterDrops((prev) => prev.filter((d) => d.id !== newDrop.id));
     }, 1000);
+  };
+
+  const decreaseWater = () => {
+    setWaterScore((prev) => {
+      const newScore = Math.max(0, prev - 10);
+      setRukoMessage("Draining water... 💧");
+      return newScore;
+    });
   };
 
   // CO2 mini-game
@@ -553,7 +633,10 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
       if (newScore >= 60 && newScore <= 80) {
         setRukoMessage("Great CO₂ balance! The plant can breathe! 🌬️");
         setRukoEmotion("excited");
-        setTimeout(() => setPhase("quiz"), 1500);
+        // Only trigger transition if we entered the zone from below
+        if (prev < 60) {
+          setTimeout(() => setPhase("quiz"), 1500);
+        }
       } else if (newScore > 80) {
         setRukoMessage("Too much CO₂! The plant is overwhelmed! 😵");
         setRukoEmotion("sad");
@@ -567,6 +650,14 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     setTimeout(() => {
       setCo2Bubbles((prev) => prev.filter((b) => b.id !== newBubble.id));
     }, 2000);
+  };
+
+  const decreaseCO2 = () => {
+    setCo2Score((prev) => {
+      const newScore = Math.max(0, prev - 10);
+      setRukoMessage("Clearing air... 🌬️");
+      return newScore;
+    });
   };
 
   const handleWrongChoice = (
@@ -631,6 +722,7 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     setWaterScore(0);
     setCo2Score(0);
     setPlantPosition({ x: SCREEN_WIDTH / 2 - 40, y: 300 });
+    plantPosRef.current = { x: SCREEN_WIDTH / 2 - 40, y: 300 };
     setIsInSun(false);
     setPhase("menu");
   };
@@ -656,13 +748,8 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
           {/* Available Topic */}
           <TouchableOpacity
             onPress={() => setPhase("intro")}
-            className="bg-emerald-100 p-6 rounded-3xl mb-4 border-2 border-emerald-300"
-            style={{
-              shadowColor: "#10b981",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.2,
-              shadowRadius: 8,
-            }}
+            className="p-6 rounded-3xl mb-4 border-2 border-emerald-300"
+            style={{ backgroundColor: "#d1fae5" }}
           >
             <View className="flex-row items-center">
               <Text className="text-4xl mr-4">🌱</Text>
@@ -673,7 +760,10 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
                 <Text className="text-emerald-600 text-sm">
                   How plants make food
                 </Text>
-                <View className="bg-emerald-500 self-start px-3 py-1 rounded-full mt-2">
+                <View
+                  className="self-start px-3 py-1 rounded-full mt-2"
+                  style={{ backgroundColor: "#10b981" }}
+                >
                   <Text className="text-white text-xs font-bold">
                     AVAILABLE
                   </Text>
@@ -681,59 +771,6 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
               </View>
             </View>
           </TouchableOpacity>
-
-          {/* Locked Topics */}
-          {[
-            {
-              emoji: "⚡",
-              title: "Electricity",
-              desc: "Circuits and currents",
-              color: "amber",
-            },
-            {
-              emoji: "🔭",
-              title: "Space",
-              desc: "Planets and stars",
-              color: "indigo",
-            },
-            {
-              emoji: "🦕",
-              title: "Dinosaurs",
-              desc: "Prehistoric life",
-              color: "stone",
-            },
-            {
-              emoji: "🧬",
-              title: "DNA",
-              desc: "Genetics and heredity",
-              color: "rose",
-            },
-          ].map((topic, idx) => (
-            <View
-              key={idx}
-              className={`bg-${topic.color}-50 p-6 rounded-3xl mb-4 border-2 border-${topic.color}-200 opacity-60`}
-            >
-              <View className="flex-row items-center">
-                <Text className="text-4xl mr-4">{topic.emoji}</Text>
-                <View className="flex-1">
-                  <Text className={`text-xl font-bold text-${topic.color}-800`}>
-                    {topic.title}
-                  </Text>
-                  <Text className={`text-${topic.color}-600 text-sm`}>
-                    {topic.desc}
-                  </Text>
-                  <View
-                    className={`bg-${topic.color}-300 self-start px-3 py-1 rounded-full mt-2`}
-                  >
-                    <Text className="text-white text-xs font-bold">
-                      COMING SOON
-                    </Text>
-                  </View>
-                </View>
-                <Text className="text-2xl">🔒</Text>
-              </View>
-            </View>
-          ))}
         </ScrollView>
       </View>
     );
@@ -742,62 +779,97 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
   // INTRO SCREEN
   if (phase === "intro") {
     return (
-      <View className="flex-1 bg-gradient-to-b from-sky-100 to-emerald-50 p-6">
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
-        >
-          <Animated.View entering={FadeIn} className="items-center">
-            <LivingRuko
-              emotion={rukoEmotion}
-              size={140}
-              onPress={() => setRukoEmotion("excited")}
-            />
+      <LinearGradient colors={["#e0f2fe", "#ecfdf5"]} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <Animated.View entering={FadeIn} className="items-center">
+              <LivingRuko
+                emotion={rukoEmotion}
+                size={140}
+                onPress={() => setRukoEmotion("excited")}
+              />
 
-            <Text className="text-3xl font-extrabold text-emerald-800 mt-6 text-center">
-              Photosynthesis Adventure! 🌱
-            </Text>
-
-            <View className="bg-white p-6 rounded-3xl mt-6 shadow-lg">
-              <Text className="text-lg text-slate-700 leading-7 text-center">
-                Help me grow a healthy plant by giving it exactly what it needs!
-                {"\n\n"}
-                But be careful - wrong choices will hurt the plant! 😰
+              <Text className="text-3xl font-extrabold text-emerald-800 mt-6 text-center">
+                Photosynthesis Adventure! 🌱
               </Text>
-            </View>
 
-            <View className="flex-row gap-4 mt-8">
-              <TouchableOpacity
-                onPress={() => setPhase("sunlight")}
-                className="bg-emerald-500 px-8 py-4 rounded-2xl shadow-lg"
+              <View
+                className="p-6 rounded-3xl mt-6 w-full"
+                style={{
+                  backgroundColor: "white",
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
               >
-                <Text className="text-white font-bold text-lg">Start! 🚀</Text>
-              </TouchableOpacity>
+                <Text className="text-lg text-slate-700 leading-7 text-center">
+                  Help me grow a healthy plant by giving it exactly what it
+                  needs!
+                  {"\n"}
+                  But be careful - wrong choices will hurt the plant! 😰
+                </Text>
+              </View>
 
-              <TouchableOpacity
-                onPress={() => setPhase("menu")}
-                className="bg-slate-200 px-6 py-4 rounded-2xl"
-              >
-                <Text className="text-slate-600 font-bold">Back</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </ScrollView>
-      </View>
+              <View className="flex-row gap-4 mt-8">
+                <TouchableOpacity
+                  onPress={() => setPhase("sunlight")}
+                  className="px-8 py-4 rounded-2xl"
+                  style={{
+                    backgroundColor: "#10b981",
+                    shadowColor: "#10b981",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  <Text className="text-white font-bold text-lg">
+                    Start! 🚀
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setPhase("menu")}
+                  className="px-6 py-4 rounded-2xl"
+                  style={{ backgroundColor: "#e2e8f0" }}
+                >
+                  <Text className="text-slate-600 font-bold">Back</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </ScrollView>
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
   // SUNLIGHT MINI-GAME
   if (phase === "sunlight") {
     return (
-      <View className="flex-1 bg-sky-200" {...panResponder.panHandlers}>
+      <View
+        className="flex-1 bg-sky-200"
+        {...panResponderSafe.panHandlers}
+        style={Platform.OS === "web" ? ({ cursor: "default" } as any) : {}}
+      >
+        <GameBackButton onPress={() => setPhase("menu")} />
+
         {/* Sun Zone */}
         <View
-          className="absolute bg-yellow-300 rounded-full opacity-50"
+          className="absolute rounded-full"
           style={{
             right: 20,
             top: 100,
             width: 150,
             height: 150,
+            backgroundColor: "rgba(253, 224, 71, 0.5)",
           }}
         >
           <Text className="text-6xl text-center mt-8">☀️</Text>
@@ -808,12 +880,13 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
 
         {/* Shadow Zone */}
         <View
-          className="absolute bg-slate-700 rounded-2xl opacity-40"
+          className="absolute rounded-2xl"
           style={{
             left: 20,
             bottom: 200,
             width: 150,
             height: 150,
+            backgroundColor: "rgba(51, 65, 85, 0.4)",
           }}
         >
           <Text className="text-4xl text-center mt-10">🌑</Text>
@@ -836,10 +909,20 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
             },
           ]}
         >
-          <Text className="text-6xl">🪴</Text>
-          <Text className="text-xs text-center font-bold text-slate-600 mt-1">
-            DRAG ME!
-          </Text>
+          <View
+            style={
+              {
+                ...webStyles,
+                padding: 10,
+              } as any
+            }
+            {...panResponderSafe.panHandlers}
+          >
+            <Text style={{ fontSize: 60, lineHeight: 70 }}>🪴</Text>
+            <Text className="text-xs text-center font-bold text-slate-600 mt-1">
+              DRAG ME!
+            </Text>
+          </View>
         </Animated.View>
 
         {/* Wrong Choices */}
@@ -852,7 +935,8 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
               <TouchableOpacity
                 key={idx}
                 onPress={() => handleWrongChoice("sunlight", choice)}
-                className="bg-red-100 p-3 rounded-xl border-2 border-red-300"
+                className="p-3 rounded-xl border-2 border-red-300"
+                style={{ backgroundColor: "#fee2e2" }}
               >
                 <Text className="text-2xl">{choice.emoji}</Text>
               </TouchableOpacity>
@@ -861,7 +945,17 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
         </View>
 
         {/* Ruko Guide */}
-        <View className="absolute bottom-4 left-4 right-4 bg-white p-4 rounded-2xl shadow-lg flex-row items-center">
+        <View
+          className="absolute bottom-4 left-4 right-4 p-4 rounded-2xl flex-row items-center"
+          style={{
+            backgroundColor: "white",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+        >
           <LivingRuko emotion={rukoEmotion} size={60} />
           <Text className="flex-1 ml-4 text-slate-800 font-semibold">
             {rukoMessage}
@@ -875,15 +969,20 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
   if (phase === "water") {
     return (
       <View className="flex-1 bg-blue-100">
+        <GameBackButton onPress={() => setPhase("menu")} />
+
         {/* Plant */}
         <View className="absolute top-1/3 left-1/2 -ml-12">
           <Animated.View style={{ transform: [{ scale: plantScale }] }}>
-            <Text className="text-8xl">🌱</Text>
+            <Text style={{ fontSize: 70, lineHeight: 80 }}>🌱</Text>
           </Animated.View>
-          <View className="bg-blue-200 h-4 rounded-full mt-2 overflow-hidden w-24">
+          <View
+            className="h-4 rounded-full mt-2 overflow-hidden w-24"
+            style={{ backgroundColor: "#bfdbfe" }}
+          >
             <View
-              className="bg-blue-500 h-full"
-              style={{ width: `${waterScore}%` }}
+              className="h-full"
+              style={{ width: `${waterScore}%`, backgroundColor: "#3b82f6" }}
             />
           </View>
           <Text className="text-center text-xs text-blue-800 mt-1">
@@ -891,10 +990,27 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
           </Text>
         </View>
 
-        {/* Tap area */}
-        <View
-          className="absolute top-20 left-4 right-4 h-40 bg-blue-50 rounded-3xl border-4 border-blue-300 border-dashed items-center justify-center"
-          onTouchStart={(e) =>
+        {/* Tap area - FIXED: Changed View to Pressable for Web support */}
+        <Pressable
+          style={
+            {
+              position: "absolute",
+              top: 80,
+              left: 16,
+              right: 16,
+              height: 160,
+              borderRadius: 24,
+              borderWidth: 4,
+              borderColor: "#93c5fd",
+              borderStyle: "dashed",
+              backgroundColor: "#eff6ff",
+              alignItems: "center",
+              justifyContent: "center",
+              ...webStyles, // <--- Fixes text selection
+              ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+            } as any
+          }
+          onPress={(e) =>
             addWaterDrop(e.nativeEvent.pageX, e.nativeEvent.pageY)
           }
         >
@@ -905,7 +1021,26 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
           <Text className="text-blue-400 text-sm mt-1">
             Not too much, not too little!
           </Text>
-        </View>
+        </Pressable>
+
+        {/* Drain Button */}
+        <TouchableOpacity
+          onPress={decreaseWater}
+          style={
+            {
+              position: "absolute",
+              right: 20,
+              top: 280,
+              backgroundColor: "#ef4444",
+              padding: 12,
+              borderRadius: 30,
+              zIndex: 50,
+              ...webStyles,
+            } as any
+          }
+        >
+          <Text style={{ color: "white", fontWeight: "bold" }}>- Drain</Text>
+        </TouchableOpacity>
 
         {/* Falling drops */}
         {waterDrops.map((drop) => (
@@ -929,7 +1064,14 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
               <TouchableOpacity
                 key={idx}
                 onPress={() => handleWrongChoice("water", choice)}
-                className="bg-red-100 p-4 rounded-2xl border-2 border-red-300"
+                className="p-4 rounded-2xl border-2 border-red-300"
+                style={
+                  {
+                    backgroundColor: "#fee2e2",
+                    ...webStyles, // <--- Fixes text selection
+                    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                  } as any
+                }
               >
                 <Text className="text-3xl">{choice.emoji}</Text>
                 <Text className="text-xs text-center text-red-700 mt-1">
@@ -941,7 +1083,17 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
         </View>
 
         {/* Ruko */}
-        <View className="absolute bottom-4 left-4 right-4 bg-white p-4 rounded-2xl shadow-lg flex-row items-center">
+        <View
+          className="absolute bottom-4 left-4 right-4 p-4 rounded-2xl flex-row items-center"
+          style={{
+            backgroundColor: "white",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+        >
           <LivingRuko emotion={rukoEmotion} size={60} />
           <Text className="flex-1 ml-4 text-slate-800 font-semibold">
             {rukoMessage}
@@ -955,19 +1107,43 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
   if (phase === "co2") {
     return (
       <View className="flex-1 bg-slate-200">
+        <GameBackButton onPress={() => setPhase("menu")} />
+
         {/* Plant */}
         <View className="absolute top-1/3 left-1/2 -ml-16">
-          <Text className="text-8xl">🌿</Text>
-          <View className="bg-slate-300 h-4 rounded-full mt-2 overflow-hidden w-32">
+          <Text style={{ fontSize: 70, lineHeight: 80 }}>🌿</Text>
+          <View
+            className="h-4 rounded-full mt-2 overflow-hidden w-32"
+            style={{ backgroundColor: "#cbd5e1" }}
+          >
             <View
-              className="bg-slate-500 h-full"
-              style={{ width: `${co2Score}%` }}
+              className="h-full"
+              style={{ width: `${co2Score}%`, backgroundColor: "#64748b" }}
             />
           </View>
           <Text className="text-center text-xs text-slate-700 mt-1">
             CO₂: {co2Score}%
           </Text>
         </View>
+
+        {/* Decrease CO2 Button */}
+        <TouchableOpacity
+          onPress={decreaseCO2}
+          style={
+            {
+              position: "absolute",
+              right: 20,
+              top: "45%",
+              backgroundColor: "#ef4444",
+              padding: 12,
+              borderRadius: 30,
+              zIndex: 50,
+              ...webStyles,
+            } as any
+          }
+        >
+          <Text style={{ color: "white", fontWeight: "bold" }}>- Vent</Text>
+        </TouchableOpacity>
 
         {/* CO2 Controls */}
         <View className="absolute top-20 left-4 right-4">
@@ -977,21 +1153,42 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
           <View className="flex-row justify-center gap-4">
             <TouchableOpacity
               onPress={() => addCO2Bubble("small")}
-              className="bg-slate-400 p-4 rounded-full"
+              className="p-4 rounded-full"
+              style={
+                {
+                  backgroundColor: "#94a3b8",
+                  ...webStyles, // <--- Fixes text selection
+                  ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                } as any
+              }
             >
               <Text className="text-2xl">🫧</Text>
               <Text className="text-xs text-white text-center mt-1">Small</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => addCO2Bubble("medium")}
-              className="bg-slate-500 p-5 rounded-full"
+              className="p-5 rounded-full"
+              style={
+                {
+                  backgroundColor: "#64748b",
+                  ...webStyles, // <--- Fixes text selection
+                  ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                } as any
+              }
             >
               <Text className="text-3xl">💨</Text>
               <Text className="text-xs text-white text-center mt-1">Good</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => addCO2Bubble("large")}
-              className="bg-slate-600 p-6 rounded-full"
+              className="p-6 rounded-full"
+              style={
+                {
+                  backgroundColor: "#475569",
+                  ...webStyles, // <--- Fixes text selection
+                  ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                } as any
+              }
             >
               <Text className="text-4xl">🌫️</Text>
               <Text className="text-xs text-white text-center mt-1">
@@ -1024,7 +1221,14 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
               <TouchableOpacity
                 key={idx}
                 onPress={() => handleWrongChoice("co2", choice)}
-                className="bg-red-100 p-3 rounded-xl border-2 border-red-300"
+                className="p-3 rounded-xl border-2 border-red-300"
+                style={
+                  {
+                    backgroundColor: "#fee2e2",
+                    ...webStyles, // <--- Fixes text selection
+                    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                  } as any
+                }
               >
                 <Text className="text-2xl">{choice.emoji}</Text>
               </TouchableOpacity>
@@ -1033,7 +1237,17 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
         </View>
 
         {/* Ruko */}
-        <View className="absolute bottom-4 left-4 right-4 bg-white p-4 rounded-2xl shadow-lg flex-row items-center">
+        <View
+          className="absolute bottom-4 left-4 right-4 p-4 rounded-2xl flex-row items-center"
+          style={{
+            backgroundColor: "white",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+        >
           <LivingRuko emotion={rukoEmotion} size={60} />
           <Text className="flex-1 ml-4 text-slate-800 font-semibold">
             {rukoMessage}
@@ -1048,7 +1262,9 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     const currentQ = QUIZ_QUESTIONS[difficulty][currentQuizIndex];
 
     return (
-      <View className="flex-1 bg-purple-50 p-6">
+      <View className="flex-1 p-6" style={{ backgroundColor: "#faf5ff" }}>
+        <GameBackButton onPress={() => setPhase("menu")} />
+
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
         >
@@ -1062,7 +1278,17 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
 
           <LivingRuko emotion={rukoEmotion} size={100} />
 
-          <View className="bg-white p-6 rounded-3xl mt-6 shadow-lg mb-6">
+          <View
+            className="p-6 rounded-3xl mt-6 mb-6"
+            style={{
+              backgroundColor: "white",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
+          >
             <Text className="text-xl font-bold text-slate-800 mb-4 text-center">
               {currentQ.question}
             </Text>
@@ -1070,7 +1296,8 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
             {showingExplanation && (
               <Animated.View
                 entering={FadeIn}
-                className="bg-amber-100 p-4 rounded-2xl mb-4"
+                className="p-4 rounded-2xl mb-4"
+                style={{ backgroundColor: "#fef3c7" }}
               >
                 <Text className="text-amber-800 text-center">
                   {currentQ.explanation}
@@ -1087,11 +1314,22 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
                 disabled={showingExplanation}
                 className={`p-5 rounded-2xl border-2 ${
                   showingExplanation && idx === currentQ.correctIndex
-                    ? "bg-green-100 border-green-500"
+                    ? "border-green-500"
                     : showingExplanation
-                      ? "bg-slate-100 border-slate-200 opacity-50"
-                      : "bg-white border-purple-200"
+                      ? "border-slate-200 opacity-50"
+                      : "border-purple-200"
                 }`}
+                style={
+                  {
+                    backgroundColor:
+                      showingExplanation && idx === currentQ.correctIndex
+                        ? "#dcfce7"
+                        : showingExplanation
+                          ? "#f1f5f9"
+                          : "white",
+                    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                  } as any
+                }
               >
                 <Text
                   className={`text-lg font-semibold text-center ${
@@ -1106,7 +1344,10 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
             ))}
           </View>
 
-          <View className="mt-6 bg-purple-100 px-6 py-3 rounded-full self-center">
+          <View
+            className="mt-6 px-6 py-3 rounded-full self-center"
+            style={{ backgroundColor: "#f3e8ff" }}
+          >
             <Text className="text-purple-800 font-bold">
               Score: {quizScore}
             </Text>
@@ -1122,9 +1363,13 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     const grade = mistakesCount === 0 ? "A+" : mistakesCount < 3 ? "B" : "C";
 
     return (
-      <View className="flex-1 bg-gradient-to-b from-yellow-100 to-green-100 p-6">
+      <LinearGradient colors={["#fef9c3", "#dcfce7"]} style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: "center",
+            padding: 24,
+          }}
         >
           <Animated.View entering={FadeIn} className="items-center">
             <Text className="text-6xl mb-2">🏆</Text>
@@ -1136,13 +1381,26 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
 
             <LivingRuko emotion="excited" size={120} />
 
-            <View className="bg-white p-6 rounded-3xl mt-6 shadow-lg w-full">
+            <View
+              className="p-6 rounded-3xl mt-6 w-full"
+              style={{
+                backgroundColor: "white",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+                elevation: 2,
+              }}
+            >
               <Text className="text-2xl font-bold text-emerald-800 text-center mb-4">
                 Final Score: {quizScore + gameState.plantHealth}
               </Text>
 
               {mistakesCount > 0 && (
-                <View className="bg-red-50 p-4 rounded-2xl mb-4">
+                <View
+                  className="p-4 rounded-2xl mb-4"
+                  style={{ backgroundColor: "#fef2f2" }}
+                >
                   <Text className="text-red-800 font-bold mb-2">
                     Mistakes made:
                   </Text>
@@ -1154,7 +1412,10 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
                 </View>
               )}
 
-              <View className="bg-emerald-50 p-4 rounded-2xl">
+              <View
+                className="p-4 rounded-2xl"
+                style={{ backgroundColor: "#ecfdf5" }}
+              >
                 <Text className="text-emerald-900 font-bold mb-2">
                   What you learned:
                 </Text>
@@ -1171,20 +1432,32 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
             <View className="flex-row gap-4 mt-8">
               <TouchableOpacity
                 onPress={resetGame}
-                className="bg-indigo-500 px-6 py-4 rounded-2xl"
+                className="px-6 py-4 rounded-2xl"
+                style={
+                  {
+                    backgroundColor: "#6366f1",
+                    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                  } as any
+                }
               >
                 <Text className="text-white font-bold">🔄 Try Again</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={onBack}
-                className="bg-emerald-500 px-6 py-4 rounded-2xl"
+                className="px-6 py-4 rounded-2xl"
+                style={
+                  {
+                    backgroundColor: "#10b981",
+                    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+                  } as any
+                }
               >
                 <Text className="text-white font-bold">✓ Done</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
         </ScrollView>
-      </View>
+      </LinearGradient>
     );
   }
 

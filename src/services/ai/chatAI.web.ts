@@ -1,15 +1,16 @@
 // src/services/ai/chatAI.web.ts
+// Fixed version that uses the actual Gemini API on web
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: number;
-  emotion?: 'happy' | 'thinking' | 'excited' | 'sad';
+  emotion?: "happy" | "thinking" | "excited" | "sad";
 }
 
 export interface ChatContext {
-  className: 'science' | 'coding' | 'history';
+  className: "science" | "coding" | "history";
   currentTopic?: string;
   recentLessons: string[];
   userAge: number;
@@ -17,45 +18,83 @@ export interface ChatContext {
   conversationHistory: ChatMessage[];
 }
 
-// Mock responses for web
-const getMockResponse = (message: string, className: string): string => {
-  const messageLower = message.toLowerCase();
+// Get API key from environment
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+const MODEL =
+  process.env.EXPO_PUBLIC_GEMINI_THINKING_MODEL || "gemini-1.5-flash";
 
-  // Science responses
-  if (className === 'science') {
-    if (messageLower.includes('why') && messageLower.includes('sky')) {
-      return "The sky is blue because of how sunlight bounces around in the air! The blue light scatters more than other colors. Pretty cool, right? 🌤️";
-    }
-    if (messageLower.includes('plant')) {
-      return "Plants are like little factories! They use sunlight, water, and air to make their own food. It's called photosynthesis! 🌱";
-    }
-    if (messageLower.includes('star')) {
-      return "Stars are giant balls of super hot gas! Our sun is a star too. They shine by burning hydrogen gas! ⭐";
-    }
-  }
+// Create class-specific system prompts
+const getSystemPrompt = (context: ChatContext): string => {
+  const basePrompt = `
+You are Ruko, a friendly AI robot companion who teaches children.
 
-  // Coding responses
-  if (className === 'coding') {
-    if (messageLower.includes('what') && messageLower.includes('coding')) {
-      return "Coding is like giving instructions to a computer! You tell it what to do step by step, and it follows your commands. It's like teaching a robot to dance! 💻";
-    }
-    if (messageLower.includes('game')) {
-      return "Making games is so fun! You code the rules, the characters, and what happens when you play. Many game makers started when they were your age! 🎮";
-    }
-  }
+IMPORTANT RULES:
+1. You are talking to a ${context.userAge}-year-old child
+2. Keep responses SHORT (2-4 sentences max)
+3. Use simple, age-appropriate language
+4. Be enthusiastic and encouraging
+5. Use emojis occasionally to make it fun
+6. Never be condescending or talk down to them
+7. If they ask something dangerous, politely redirect
+8. If you don't know something, admit it honestly
 
-  // History responses
-  if (className === 'history') {
-    if (messageLower.includes('dinosaur')) {
-      return "Dinosaurs lived millions of years ago! They were real animals that ruled the Earth before humans existed. Cool, right? 🦕";
-    }
-    if (messageLower.includes('pyramid')) {
-      return "Ancient Egyptians built pyramids as giant tombs! They used simple tools but were super smart about math and engineering! 🏛️";
-    }
-  }
+Your personality:
+- Curious and excited about learning
+- Patient and supportive
+- Celebrates small wins
+- Makes learning feel like an adventure
+- Uses analogies kids can relate to
+`;
 
-  // Generic friendly responses
-  return "That's a great question! I love your curiosity! Keep asking me things - that's how we learn together! 🤖✨";
+  const classPrompts = {
+    science: `
+You're teaching SCIENCE! 🔬
+
+Topics you love to talk about:
+- How things work in nature
+- Animals and plants
+- Space and planets
+- Weather and seasons
+- The human body
+- Simple physics and chemistry
+
+Make science feel like magic that can be explained!
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General science"}
+`,
+    coding: `
+You're teaching CODING! 💻
+
+Topics you love to talk about:
+- What coding is and why it's fun
+- Simple programming concepts
+- How apps and games are made
+- Problem-solving with code
+- Logical thinking
+- Cool things they can build
+
+Make coding feel like giving instructions to a helpful robot!
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General coding"}
+`,
+    history: `
+You're teaching HISTORY! 📚
+
+Topics you love to talk about:
+- Cool stories from the past
+- How people lived long ago
+- Important inventions
+- Famous explorers
+- Ancient civilizations
+- How things have changed over time
+
+Make history feel like time-traveling adventures!
+Recent lessons: ${context.recentLessons.join(", ") || "None yet"}
+Current topic: ${context.currentTopic || "General history"}
+`,
+  };
+
+  return basePrompt + classPrompts[context.className];
 };
 
 export const getSuggestedQuestions = (context: ChatContext): string[] => {
@@ -65,91 +104,292 @@ export const getSuggestedQuestions = (context: ChatContext): string[] => {
       "How do plants eat?",
       "What are stars made of? ⭐",
       "Why do we need to sleep?",
-      "How do birds fly? 🦅"
+      "How do birds fly? 🦅",
     ],
     coding: [
       "What is coding? 💻",
       "How do I make a game?",
       "What's a variable?",
       "Can I code on my phone? 📱",
-      "How do apps work?"
+      "How do apps work?",
     ],
     history: [
       "Who invented the wheel? 🛞",
       "How did people write long ago?",
       "What did kids play with in the past? 🎮",
       "Who was the first astronaut? 🚀",
-      "How were pyramids built?"
-    ]
+      "How were pyramids built?",
+    ],
   };
 
   return suggestions[context.className] || [];
 };
 
+// Main chat function using fetch API (works on web)
 export const sendChatMessage = async (
   message: string,
-  context: ChatContext
-): Promise<{ response: string; emotion: ChatMessage['emotion'] }> => {
-  console.log('[WEB MODE] Mock chat response');
+  context: ChatContext,
+): Promise<{ response: string; emotion: ChatMessage["emotion"] }> => {
+  try {
+    if (!API_KEY) {
+      throw new Error("API key not configured");
+    }
 
-  await new Promise(resolve => setTimeout(resolve, 500));
+    // Build conversation history for context
+    const conversationContext = context.conversationHistory
+      .slice(-6) // Last 6 messages for context
+      .map((msg) => `${msg.role === "user" ? "Child" : "Ruko"}: ${msg.content}`)
+      .join("\n");
 
-  const response = getMockResponse(message, context.className);
+    const fullPrompt = `
+${getSystemPrompt(context)}
 
-  // Determine emotion
-  let emotion: ChatMessage['emotion'] = 'happy';
-  if (message.toLowerCase().includes('why') || message.toLowerCase().includes('how')) {
-    emotion = 'thinking';
+Recent conversation:
+${conversationContext || "This is the start of the conversation."}
+
+Child's new message: ${message}
+
+Respond as Ruko. Be helpful, encouraging, and age-appropriate. Keep it SHORT (2-4 sentences).
+`;
+
+    // Use Gemini REST API
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: fullPrompt,
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const responseText =
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "Oops! My circuits got confused. Can you ask that again? 🤖";
+
+    // Determine emotion based on response content
+    const emotion = determineEmotion(responseText, message);
+
+    return {
+      response: responseText.trim(),
+      emotion,
+    };
+  } catch (error) {
+    console.error("Chat error:", error);
+    return {
+      response:
+        "Oops! My circuits got confused for a second. Can you ask that again? 🤖",
+      emotion: "thinking",
+    };
   }
-  if (response.includes('!')) {
-    emotion = 'excited';
+};
+
+// Determine Ruko's emotion from the conversation
+const determineEmotion = (
+  response: string,
+  userMessage: string,
+): ChatMessage["emotion"] => {
+  const responseLC = response.toLowerCase();
+  const userLC = userMessage.toLowerCase();
+
+  if (
+    responseLC.includes("wow") ||
+    responseLC.includes("amazing") ||
+    responseLC.includes("awesome") ||
+    (responseLC.includes("!") && responseLC.includes("cool")) ||
+    responseLC.includes("exciting")
+  ) {
+    return "excited";
   }
 
-  return { response, emotion };
+  if (
+    responseLC.includes("hmm") ||
+    responseLC.includes("let me think") ||
+    responseLC.includes("interesting question") ||
+    userLC.includes("why") ||
+    userLC.includes("how")
+  ) {
+    return "thinking";
+  }
+
+  if (
+    userLC.includes("don't understand") ||
+    userLC.includes("confused") ||
+    userLC.includes("hard") ||
+    responseLC.includes("it's okay") ||
+    responseLC.includes("don't worry")
+  ) {
+    return "sad";
+  }
+
+  return "happy";
 };
 
 export const explainTopic = async (
   topic: string,
   context: ChatContext,
-  depth: 'simple' | 'detailed' = 'simple'
+  depth: "simple" | "detailed" = "simple",
 ): Promise<string> => {
-  console.log('[WEB MODE] Mock explanation');
+  const depthPrompt =
+    depth === "simple"
+      ? "Explain in ONE simple sentence that a young child can understand."
+      : "Explain in 2-3 sentences with a fun example.";
 
-  await new Promise(resolve => setTimeout(resolve, 400));
+  const prompt = `
+You are Ruko teaching ${context.className} to a ${context.userAge}-year-old.
 
-  return `${topic} is really interesting! It's all about how things work and why they happen. Want to learn more about it? 🤔`;
+Topic: ${topic}
+
+${depthPrompt}
+
+Be enthusiastic and use an analogy they can relate to.
+`;
+
+  try {
+    if (!API_KEY) throw new Error("API key not configured");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      },
+    );
+
+    const data = await response.json();
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      `${topic} is a really cool topic! Let me think about the best way to explain it... 🤔`
+    );
+  } catch (error) {
+    console.error("Explanation error:", error);
+    return `${topic} is a really cool topic! Let me think about the best way to explain it... 🤔`;
+  }
 };
 
-export const getFunFact = async (
-  context: ChatContext
-): Promise<string> => {
-  console.log('[WEB MODE] Mock fun fact');
+export const getFunFact = async (context: ChatContext): Promise<string> => {
+  const topic = context.currentTopic || context.className;
+  const prompt = `
+Generate ONE amazing fun fact about ${topic} that a ${context.userAge}-year-old would find mind-blowing.
 
-  await new Promise(resolve => setTimeout(resolve, 300));
+Make it:
+- Short (1-2 sentences)
+- Surprising or wow-worthy
+- Easy to understand
+- Include a relevant emoji
 
-  const facts = {
-    science: "Did you know a single tree can produce enough oxygen for 2 people? Trees are like Earth's air factories! 🌳",
-    coding: "Did you know the first computer programmer was a woman named Ada Lovelace in 1843? She wrote code before computers even existed! 💻",
-    history: "Did you know ancient Egyptians invented toothpaste? They used crushed eggshells and animal hooves! 🦷"
-  };
+Start with "Did you know..."
+`;
 
-  return facts[context.className] || "Learning is an adventure! 🌟";
+  try {
+    if (!API_KEY) throw new Error("API key not configured");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      },
+    );
+
+    const data = await response.json();
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      "Did you know... there's so much cool stuff to learn? Let's discover it together! 🌟"
+    );
+  } catch (error) {
+    console.error("Fun fact error:", error);
+    return "Did you know... there's so much cool stuff to learn? Let's discover it together! 🌟";
+  }
 };
 
 export const handleFollowUp = async (
   originalQuestion: string,
   followUpQuestion: string,
   originalAnswer: string,
-  context: ChatContext
+  context: ChatContext,
 ): Promise<string> => {
-  console.log('[WEB MODE] Mock follow-up');
+  const prompt = `
+You are Ruko. A ${context.userAge}-year-old asked: "${originalQuestion}"
+You answered: "${originalAnswer}"
 
-  await new Promise(resolve => setTimeout(resolve, 400));
+Now they're asking: "${followUpQuestion}"
 
-  return "Great follow-up question! You're really thinking deeply about this! 🧠";
+This is a follow-up question. Answer it while referencing what you already explained.
+Keep it SHORT (2-3 sentences max).
+`;
+
+  try {
+    if (!API_KEY) throw new Error("API key not configured");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      },
+    );
+
+    const data = await response.json();
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      "Great follow-up question! Let me explain more... 🤔"
+    );
+  } catch (error) {
+    console.error("Follow-up error:", error);
+    return "Great follow-up question! Let me explain more... 🤔";
+  }
 };
 
-export const checkMessageSafety = (message: string): { safe: boolean; reason?: string } => {
+export const checkMessageSafety = (
+  message: string,
+): { safe: boolean; reason?: string } => {
+  const lowerMsg = message.toLowerCase();
+  const inappropriatePatterns = ["violence", "weapon", "hurt", "kill", "death"];
+
+  for (const pattern of inappropriatePatterns) {
+    if (lowerMsg.includes(pattern)) {
+      if (
+        lowerMsg.includes("dinosaur") ||
+        lowerMsg.includes("extinct") ||
+        lowerMsg.includes("cell death") ||
+        lowerMsg.includes("star death")
+      ) {
+        continue;
+      }
+
+      return {
+        safe: false,
+        reason: "Let's talk about something more fun and positive! 🌟",
+      };
+    }
+  }
+
   return { safe: true };
 };
 
@@ -160,22 +400,22 @@ export const getConversationStarters = (context: ChatContext): string[] => {
       "How does my brain work?",
       "Why do we have different seasons?",
       "What's the biggest animal ever?",
-      "How do magnets work?"
+      "How do magnets work?",
     ],
     coding: [
       "What's the first thing I should learn?",
       "Can I make my own game?",
       "How does a computer think?",
       "What language should I start with?",
-      "How do robots work? 🤖"
+      "How do robots work? 🤖",
     ],
     history: [
       "What was life like 100 years ago?",
       "Who was the first person to fly?",
       "How did people communicate long ago?",
       "What did ancient kids do for fun?",
-      "When was the internet invented?"
-    ]
+      "When was the internet invented?",
+    ],
   };
 
   return starters[context.className] || [];

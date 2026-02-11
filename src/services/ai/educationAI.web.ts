@@ -1,7 +1,5 @@
 // src/services/ai/educationAI.web.ts
-
-// Web fallback - returns mock data instead of calling real AI
-// This prevents import.meta errors on web
+// Fixed version that uses actual Gemini API on web
 
 export interface QuizQuestion {
   id: string;
@@ -9,7 +7,7 @@ export interface QuizQuestion {
   options: string[];
   correctIndex: number;
   explanation: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   rukoHint: string;
 }
 
@@ -21,9 +19,9 @@ export interface PlantingScenario {
     hasWater: boolean;
     hasCO2: boolean;
   };
-  outcome: 'success' | 'partial' | 'fail';
+  outcome: "success" | "partial" | "fail";
   feedback: string;
-  rukoReaction: 'happy' | 'thinking' | 'sad';
+  rukoReaction: "happy" | "thinking" | "sad";
 }
 
 export interface LessonContent {
@@ -34,82 +32,126 @@ export interface LessonContent {
   summary: string;
 }
 
-// Mock AI responses for web
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+const MODEL =
+  process.env.EXPO_PUBLIC_GEMINI_THINKING_MODEL || "gemini-1.5-flash";
+
+// Helper function to call Gemini API
+async function callGeminiAPI(prompt: string): Promise<string> {
+  if (!API_KEY) {
+    throw new Error("API key not configured");
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
 export const generateQuiz = async (
   topic: string,
-  difficulty: 'easy' | 'medium' | 'hard',
+  difficulty: "easy" | "medium" | "hard",
   userAge: number,
-  count: number = 5
+  count: number = 5,
 ): Promise<QuizQuestion[]> => {
-  console.log('[WEB MODE] Using mock quiz data');
+  const prompt = `
+You are Ruko, a friendly AI robot teaching ${topic} to a ${userAge}-year-old child.
 
-  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate delay
+Generate ${count} quiz questions about ${topic} at ${difficulty} difficulty level.
 
-  return [
-    {
-      id: 'web-q1',
-      question: 'What do plants need to make food?',
-      options: [
-        '☀️ Sunlight, 💧 Water, 💨 CO₂',
-        '🍕 Pizza, 🥤 Soda, 🍰 Cake',
-        '🌙 Moonlight, ☕ Coffee, 🎵 Music',
-        '⭐ Stars, 🌈 Rainbow, ☁️ Clouds'
-      ],
-      correctIndex: 0,
-      explanation: 'Plants need sunlight for energy, water from the ground, and carbon dioxide (CO₂) from the air!',
-      difficulty,
-      rukoHint: 'Think about what plants get from the sun, soil, and air!'
-    },
-    {
-      id: 'web-q2',
-      question: 'What do plants make during photosynthesis?',
-      options: [
-        '🍕 Pizza',
-        '🍬 Glucose (sugar) & 💨 Oxygen',
-        '☁️ Clouds',
-        '🌈 Rainbows'
-      ],
-      correctIndex: 1,
-      explanation: 'Plants make glucose (a type of sugar) for their food, and release oxygen that we breathe!',
-      difficulty,
-      rukoHint: 'Plants make food AND give us something to breathe!'
+Requirements:
+1. Age-appropriate language for ${userAge} years old
+2. Multiple choice with 4 options each
+3. Include fun, wrong answers that teach common misconceptions
+4. Provide clear explanations
+5. Add a helpful hint from Ruko's perspective
+
+Return ONLY valid JSON array with this exact structure:
+[
+  {
+    "id": "unique-id",
+    "question": "Question text?",
+    "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+    "correctIndex": 0,
+    "explanation": "Why this is correct...",
+    "difficulty": "${difficulty}",
+    "rukoHint": "Hint from Ruko..."
+  }
+]
+
+Make it educational, fun, and engaging!
+`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error("No valid JSON found in response");
     }
-  ].slice(0, count);
+
+    const questions: QuizQuestion[] = JSON.parse(jsonMatch[0]);
+    return questions;
+  } catch (error) {
+    console.error("Quiz generation error:", error);
+    return getFallbackQuiz(topic, difficulty, count);
+  }
 };
 
 export const generatePlantingScenarios = async (
-  level: number
+  level: number,
 ): Promise<PlantingScenario[]> => {
-  console.log('[WEB MODE] Using mock scenarios');
+  const prompt = `
+You are Ruko, teaching photosynthesis through interactive scenarios.
+Generate 5 different planting scenarios for difficulty level ${level}/10.
 
-  await new Promise(resolve => setTimeout(resolve, 500));
+Each scenario should have:
+- Different combinations of sun, water, and CO2
+- Realistic outcomes based on what's provided
+- Educational feedback explaining why it worked or didn't
+- Ruko's emotional reaction
 
-  return [
-    {
-      id: 'web-s1',
-      description: 'You gave the plant only water',
-      ingredients: { hasSun: false, hasWater: true, hasCO2: false },
-      outcome: 'fail',
-      feedback: 'Water alone isn\'t enough! Plants need sunlight for energy and CO₂ from air.',
-      rukoReaction: 'sad'
+Return ONLY valid JSON array:
+[
+  {
+    "id": "scenario-id",
+    "description": "Child's action description",
+    "ingredients": {
+      "hasSun": true/false,
+      "hasWater": true/false,
+      "hasCO2": true/false
     },
-    {
-      id: 'web-s2',
-      description: 'You gave the plant sun and water',
-      ingredients: { hasSun: true, hasWater: true, hasCO2: false },
-      outcome: 'partial',
-      feedback: 'Good start! But plants also need CO₂ from the air.',
-      rukoReaction: 'thinking'
-    },
-    {
-      id: 'web-s3',
-      description: 'You gave the plant everything!',
-      ingredients: { hasSun: true, hasWater: true, hasCO2: true },
-      outcome: 'success',
-      feedback: 'Perfect! With sun, water, and CO₂, the plant can make its own food!',
-      rukoReaction: 'happy'
+    "outcome": "success" | "partial" | "fail",
+    "feedback": "Educational explanation",
+    "rukoReaction": "happy" | "thinking" | "sad"
+  }
+]
+`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error("No valid JSON found");
     }
-  ];
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error("Scenario generation error:", error);
+    return getFallbackScenarios();
+  }
 };
 
 export const getAIGuidance = async (
@@ -117,52 +159,209 @@ export const getAIGuidance = async (
   question: string,
   userAnswer: string,
   correctAnswer: string,
-  userAge: number
+  userAge: number,
 ): Promise<string> => {
-  console.log('[WEB MODE] Using mock guidance');
+  const prompt = `
+You are Ruko, a friendly AI robot teacher.
 
-  await new Promise(resolve => setTimeout(resolve, 300));
+A ${userAge}-year-old child was learning about ${topic}.
+Question: ${question}
+Their answer: ${userAnswer}
+Correct answer: ${correctAnswer}
 
-  return "Good try! Let me explain: " + correctAnswer;
+Provide encouraging, educational guidance (2-3 sentences max) that:
+1. Acknowledges their effort
+2. Gently explains the mistake
+3. Helps them understand the correct concept
+4. Keeps them motivated
+
+Respond as Ruko in first person, friendly tone.
+`;
+
+  try {
+    const response = await callGeminiAPI(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error("Guidance generation error:", error);
+    return "Good try! Let me explain why that's not quite right...";
+  }
 };
 
 export const generateLessonContent = async (
   topic: string,
   userAge: number,
-  learningStyle: 'visual' | 'reading' | 'mixed'
+  learningStyle: "visual" | "reading" | "mixed",
 ): Promise<LessonContent> => {
-  console.log('[WEB MODE] Using mock lesson');
+  const prompt = `
+Create an engaging lesson about ${topic} for a ${userAge}-year-old child.
+Their learning style is: ${learningStyle}
 
-  await new Promise(resolve => setTimeout(resolve, 500));
+Return ONLY valid JSON:
+{
+  "title": "Engaging title",
+  "introduction": "Hook them with excitement",
+  "keyPoints": ["Point 1", "Point 2", "Point 3"],
+  "funFact": "Amazing fact they'll love",
+  "summary": "Quick recap"
+}
 
-  return {
-    title: `Let's Learn About ${topic}!`,
-    introduction: `Get ready to discover something amazing!`,
-    keyPoints: [
-      'Plants are amazing food factories!',
-      'They use sunlight, water, and air',
-      'We need plants to survive!'
-    ],
-    funFact: 'One tree can produce enough oxygen for 2 people!',
-    summary: 'Plants make food using photosynthesis - how cool is that?'
-  };
+Make it ${learningStyle === "visual" ? "descriptive and visual" : "clear and informative"}.
+`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No valid JSON found");
+    }
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error("Lesson generation error:", error);
+    return getFallbackLesson(topic);
+  }
 };
 
 export const getRukoDialogue = async (
   context: string,
-  emotion: 'happy' | 'excited' | 'thinking' | 'encouraging',
-  userAge: number
+  emotion: "happy" | "excited" | "thinking" | "encouraging",
+  userAge: number,
 ): Promise<string> => {
-  console.log('[WEB MODE] Using mock dialogue');
+  const prompt = `
+You are Ruko, a friendly robot companion teaching a ${userAge}-year-old child.
 
-  await new Promise(resolve => setTimeout(resolve, 200));
+Context: ${context}
+Your current emotion: ${emotion}
 
+Generate ONE short, age-appropriate response (1-2 sentences max) as Ruko.
+Be enthusiastic, encouraging, and educational.
+
+Just the dialogue, no quotation marks or labels.
+`;
+
+  try {
+    const response = await callGeminiAPI(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error("Dialogue generation error:", error);
+    return getDefaultDialogue(emotion);
+  }
+};
+
+// ===== FALLBACK FUNCTIONS =====
+
+function getFallbackQuiz(
+  topic: string,
+  difficulty: string,
+  count: number,
+): QuizQuestion[] {
+  const photosynthesisQuiz: QuizQuestion[] = [
+    {
+      id: "photo-1",
+      question: "What do plants need to make food?",
+      options: [
+        "☀️ Sunlight, 💧 Water, 💨 CO₂",
+        "🍕 Pizza, 🥤 Soda, 🍰 Cake",
+        "🌙 Moonlight, ☕ Coffee, 🎵 Music",
+        "⭐ Stars, 🌈 Rainbow, ☁️ Clouds",
+      ],
+      correctIndex: 0,
+      explanation:
+        "Plants need sunlight for energy, water from the ground, and carbon dioxide (CO₂) from the air!",
+      difficulty: difficulty as any,
+      rukoHint: "Think about what plants get from the sun, soil, and air!",
+    },
+    {
+      id: "photo-2",
+      question: "What do plants make during photosynthesis?",
+      options: [
+        "🍕 Pizza",
+        "🍬 Glucose (sugar) & 💨 Oxygen",
+        "☁️ Clouds",
+        "🌈 Rainbows",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Plants make glucose (a type of sugar) for their food, and release oxygen that we breathe!",
+      difficulty: difficulty as any,
+      rukoHint:
+        "Remember: Plants make their own food AND give us something to breathe!",
+    },
+    {
+      id: "photo-3",
+      question: "Where does photosynthesis happen in a plant?",
+      options: [
+        "🌿 In the leaves",
+        "🪨 In the rocks",
+        "☁️ In the clouds",
+        "🌊 In the ocean",
+      ],
+      correctIndex: 0,
+      explanation:
+        "Photosynthesis happens in the leaves! They have special green parts called chlorophyll that catch sunlight.",
+      difficulty: difficulty as any,
+      rukoHint: "Think about the green parts of the plant!",
+    },
+  ];
+
+  return photosynthesisQuiz.slice(0, count);
+}
+
+function getFallbackScenarios(): PlantingScenario[] {
+  return [
+    {
+      id: "scenario-1",
+      description: "You gave the plant only water",
+      ingredients: { hasSun: false, hasWater: true, hasCO2: false },
+      outcome: "fail",
+      feedback:
+        "Water alone isn't enough! Plants need sunlight for energy and CO₂ from air.",
+      rukoReaction: "sad",
+    },
+    {
+      id: "scenario-2",
+      description: "You gave the plant sun and water",
+      ingredients: { hasSun: true, hasWater: true, hasCO2: false },
+      outcome: "partial",
+      feedback:
+        "Good start! But plants also need CO₂ from the air to complete photosynthesis.",
+      rukoReaction: "thinking",
+    },
+    {
+      id: "scenario-3",
+      description: "You gave the plant everything!",
+      ingredients: { hasSun: true, hasWater: true, hasCO2: true },
+      outcome: "success",
+      feedback:
+        "Perfect! With sun, water, and CO₂, the plant can make its own food!",
+      rukoReaction: "happy",
+    },
+  ];
+}
+
+function getFallbackLesson(topic: string): LessonContent {
+  return {
+    title: `Let's Learn About ${topic}!`,
+    introduction: `Get ready to discover something amazing about ${topic}!`,
+    keyPoints: [
+      "This is an exciting topic!",
+      "You're going to learn a lot!",
+      "Let's explore together!",
+    ],
+    funFact: "Did you know learning new things makes your brain stronger?",
+    summary: "Great job learning something new today!",
+  };
+}
+
+function getDefaultDialogue(emotion: string): string {
   const dialogues = {
-    happy: 'Awesome! You\'re doing great! 🎉',
-    excited: 'WOW! This is so cool! Let\'s keep going! ⚡',
-    thinking: 'Hmm, let me think about this... 🤔',
-    encouraging: 'You can do it! I believe in you! 💪'
+    happy: "Awesome! You're doing great! 🎉",
+    excited: "WOW! This is so cool! Let's keep going! ⚡",
+    thinking: "Hmm, let me think about this... 🤔",
+    encouraging: "You can do it! I believe in you! 💪",
   };
 
-  return dialogues[emotion] || 'Let\'s learn together!';
-};
+  return (
+    dialogues[emotion as keyof typeof dialogues] || "Let's learn together!"
+  );
+}
