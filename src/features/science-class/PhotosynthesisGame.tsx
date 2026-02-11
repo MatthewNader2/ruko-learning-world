@@ -1,41 +1,79 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
   SlideInDown,
-  SlideInUp,
   BounceIn,
 } from 'react-native-reanimated';
 import LivingRuko from '../../components/ruko/LivingRuko';
 import { Audio } from 'expo-av';
+import { useUserStore } from '../../store/userStore';
+import * as AI from '../../services/ai/educationAI';
 
 type GamePhase =
   | 'intro'
-  | 'learn-sun'
-  | 'learn-water'
-  | 'learn-co2'
-  | 'quiz-ingredients'
-  | 'quiz-order'
-  | 'celebration'
-  | 'explanation';
+  | 'tutorial'
+  | 'free-experiment'
+  | 'guided-challenge'
+  | 'quiz'
+  | 'success';
 
-interface Question {
-  question: string;
-  options: string[];
-  correctIndex: number;
-  explanation: string;
-  rukoHint: string;
+interface ExperimentAttempt {
+  hasSun: boolean;
+  hasWater: boolean;
+  hasCO2: boolean;
+  timestamp: number;
 }
 
 export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
+  const { age, addXP, addCoins, updateClassProgress, level } = useUserStore();
+
   const [phase, setPhase] = useState<GamePhase>('intro');
   const [rukoEmotion, setRukoEmotion] = useState<'happy' | 'thinking' | 'excited' | 'sad'>('happy');
-  const [score, setScore] = useState(0);
-  const [attempts, setAttempts] = useState(0);
-  const [currentPlantStage, setCurrentPlantStage] = useState(0); // 0: seed, 1: sprout, 2: small, 3: flower
+  const [rukoMessage, setRukoMessage] = useState("Hi! Ready to learn how plants eat?");
 
-  // Safe audio player
+  // Experiment state
+  const [hasSun, setHasSun] = useState(false);
+  const [hasWater, setHasWater] = useState(false);
+  const [hasCO2, setHasCO2] = useState(false);
+  const [plantStage, setPlantStage] = useState(0);
+  const [attempts, setAttempts] = useState<ExperimentAttempt[]>([]);
+
+  // AI-generated content
+  const [scenarios, setScenarios] = useState<AI.PlantingScenario[]>([]);
+  const [quizQuestions, setQuizQuestions] = useState<AI.QuizQuestion[]>([]);
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+  const [quizScore, setQuizScore] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load AI content on mount
+  useEffect(() => {
+    loadAIContent();
+  }, []);
+
+  const loadAIContent = async () => {
+    setIsLoading(true);
+    try {
+      const [scenariosData, quizData] = await Promise.all([
+        AI.generatePlantingScenarios(level),
+        AI.generateQuiz('photosynthesis', getDifficultyForLevel(level), age, 5)
+      ]);
+
+      setScenarios(scenariosData);
+      setQuizQuestions(quizData);
+    } catch (error) {
+      console.error('AI content loading error:', error);
+    }
+    setIsLoading(false);
+  };
+
+  const getDifficultyForLevel = (lvl: number): 'easy' | 'medium' | 'hard' => {
+    if (lvl < 3) return 'easy';
+    if (lvl < 6) return 'medium';
+    return 'hard';
+  };
+
   const playSound = async (type: 'pop' | 'success' | 'wrong' | 'correct') => {
     if (Platform.OS === 'web') return;
 
@@ -49,102 +87,132 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
 
       const { sound } = await Audio.Sound.createAsync(sources[type]);
       await sound.playAsync();
-
       sound.setOnPlaybackStatusUpdate(async (status) => {
         if (status.isLoaded && status.didJustFinish) {
           await sound.unloadAsync();
         }
       });
     } catch (error) {
-      console.log('Audio error:', error);
+      // Silent fail
     }
   };
 
-  // Story progression
-  const nextPhase = () => {
-    const phaseOrder: GamePhase[] = [
-      'intro',
-      'learn-sun',
-      'learn-water',
-      'learn-co2',
-      'quiz-ingredients',
-      'quiz-order',
-      'celebration'
-    ];
+  const handleExperiment = async () => {
+    const attempt: ExperimentAttempt = {
+      hasSun,
+      hasWater,
+      hasCO2,
+      timestamp: Date.now()
+    };
 
-    const currentIndex = phaseOrder.indexOf(phase);
-    if (currentIndex < phaseOrder.length - 1) {
-      setPhase(phaseOrder[currentIndex + 1]);
-      playSound('pop');
+    setAttempts([...attempts, attempt]);
+
+    // Count ingredients
+    const ingredientCount = [hasSun, hasWater, hasCO2].filter(Boolean).length;
+
+    if (hasSun && hasWater && hasCO2) {
+      // SUCCESS!
+      setPlantStage(3);
+      setRukoEmotion('excited');
+      playSound('success');
+
+      const dialogue = await AI.getRukoDialogue(
+        'Student successfully grew a plant with all correct ingredients',
+        'excited',
+        age
+      );
+      setRukoMessage(dialogue || '🎉 Amazing! You did it! The plant is making food through photosynthesis!');
+
+      addXP(50);
+      addCoins(10);
+
+      setTimeout(() => {
+        setPhase('quiz');
+        setRukoMessage("Now let's see what you learned! Ready for a quiz?");
+      }, 3000);
+
+    } else {
+      // Partial or failure - Get AI guidance
+      setPlantStage(ingredientCount);
+
+      if (ingredientCount === 0) {
+        setRukoEmotion('sad');
+        setRukoMessage("Oops! The plant needs something to grow. Try adding ingredients!");
+      } else {
+        setRukoEmotion('thinking');
+
+        const missingItems = [];
+        if (!hasSun) missingItems.push('sunlight');
+        if (!hasWater) missingItems.push('water');
+        if (!hasCO2) missingItems.push('CO₂');
+
+        const guidance = await AI.getRukoDialogue(
+          `Student added ${ingredientCount} out of 3 ingredients. Missing: ${missingItems.join(', ')}`,
+          'encouraging',
+          age
+        );
+
+        setRukoMessage(guidance || `Good start! But the plant still needs: ${missingItems.join(', ')}`);
+      }
     }
   };
 
-  // Quiz data
-  const ingredientsQuiz: Question = {
-    question: "What do plants need to make their own food?",
-    options: [
-      "Sunlight, Water, Pizza 🍕",
-      "Sunlight, Water, CO₂ 💨",
-      "Sunlight, Soda, Candy 🍬",
-      "Moon, Coffee, Music 🎵"
-    ],
-    correctIndex: 1,
-    explanation: "Plants need Sunlight ☀️, Water 💧, and Carbon Dioxide (CO₂) 💨 from the air!",
-    rukoHint: "Think about what you learned! The air we breathe out has CO₂!"
-  };
+  const handleQuizAnswer = async (selectedIndex: number) => {
+    const currentQ = quizQuestions[currentQuizIndex];
 
-  const orderQuiz: Question = {
-    question: "What do plants MAKE during photosynthesis?",
-    options: [
-      "Pizza and Cookies 🍕🍪",
-      "Glucose (Sugar) & Oxygen 🍬💨",
-      "Water and Sunlight 💧☀️",
-      "Carbon Dioxide 💨"
-    ],
-    correctIndex: 1,
-    explanation: "Plants make Glucose (a type of sugar for food) and Oxygen (which we breathe)! They're like tiny food factories! 🏭",
-    rukoHint: "Remember: Plants TAKE IN CO₂ and MAKE oxygen for us!"
-  };
-
-  const handleQuizAnswer = (selectedIndex: number, quiz: Question) => {
-    if (selectedIndex === quiz.correctIndex) {
+    if (selectedIndex === currentQ.correctIndex) {
+      // Correct!
       playSound('correct');
       setRukoEmotion('excited');
-      setScore(prev => prev + 50);
-      setCurrentPlantStage(prev => Math.min(prev + 1, 3));
+      setQuizScore(prev => prev + 20);
+      addXP(20);
+
+      setRukoMessage(currentQ.explanation);
+
       setTimeout(() => {
-        nextPhase();
-      }, 2000);
+        if (currentQuizIndex < quizQuestions.length - 1) {
+          setCurrentQuizIndex(prev => prev + 1);
+          setRukoEmotion('happy');
+          setRukoMessage("Great! Next question...");
+        } else {
+          // Quiz complete!
+          setPhase('success');
+          updateClassProgress('science', 'photosynthesis', true, quizScore + 20);
+        }
+      }, 2500);
+
     } else {
+      // Wrong answer
       playSound('wrong');
       setRukoEmotion('sad');
-      setAttempts(prev => prev + 1);
+
+      const guidance = await AI.getAIGuidance(
+        'photosynthesis',
+        currentQ.question,
+        currentQ.options[selectedIndex],
+        currentQ.options[currentQ.correctIndex],
+        age
+      );
+
+      setRukoMessage(guidance || currentQ.rukoHint);
+
       setTimeout(() => {
         setRukoEmotion('happy');
-      }, 1500);
+      }, 2000);
     }
   };
 
-  // Plant emoji based on stage
-  const getPlantEmoji = () => {
-    const stages = ['🫘', '🌱', '🌿', '🌻'];
-    return stages[currentPlantStage];
+  const resetExperiment = () => {
+    setHasSun(false);
+    setHasWater(false);
+    setHasCO2(false);
+    setPlantStage(0);
   };
 
-  // Render plant growth area
-  const PlantDisplay = () => (
-    <Animated.View
-      key={currentPlantStage}
-      entering={BounceIn.duration(600)}
-      className="items-center mb-6"
-    >
-      <Text style={{ fontSize: 120 }}>{getPlantEmoji()}</Text>
-      <Text className="text-6xl">🪴</Text>
-      <View className="bg-emerald-100 px-4 py-2 rounded-full mt-2">
-        <Text className="text-emerald-800 font-bold">Stage {currentPlantStage}/3</Text>
-      </View>
-    </Animated.View>
-  );
+  const getPlantEmoji = () => {
+    const stages = ['🫘', '🌱', '🌿', '🌻'];
+    return stages[plantStage] || '🫘';
+  };
 
   // INTRO SCREEN
   if (phase === 'intro') {
@@ -152,35 +220,32 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
       <View className="flex-1 bg-gradient-to-b from-sky-100 to-emerald-100 p-6">
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
           <Animated.View entering={FadeIn.duration(500)} className="items-center">
-            <LivingRuko emotion="happy" size={160} />
+            <LivingRuko emotion="happy" size={160} onPress={() => setRukoEmotion('excited')} />
 
             <Text className="text-4xl font-extrabold text-emerald-800 mt-6 text-center">
-              🌱 How Plants Eat
+              🌱 Plant Science Lab
             </Text>
 
             <View className="bg-white/95 p-6 rounded-3xl mt-6 shadow-lg">
               <Text className="text-xl font-bold text-indigo-600 mb-3 text-center">
-                "Hi! I'm Ruko! Let me teach you something AMAZING!" 🤖
+                "I'm Ruko! Let me teach you how plants make food!" 🤖
               </Text>
 
               <Text className="text-lg text-slate-700 leading-7">
-                Did you know plants don't eat food like we do?
+                Plants don't eat like we do - they MAKE their own food using a super cool process!
                 {'\n\n'}
-                They MAKE their own food using a magic trick called
-                <Text className="font-bold text-emerald-600"> PHOTOSYNTHESIS</Text>!
-                {'\n\n'}
-                Let me show you how! 🔬✨
+                Today, you'll run real experiments to discover the secret recipe! 🔬
               </Text>
             </View>
 
             <TouchableOpacity
               onPress={() => {
-                nextPhase();
+                setPhase('tutorial');
                 setRukoEmotion('excited');
               }}
               className="bg-emerald-500 px-12 py-5 rounded-full mt-8 shadow-lg border-b-4 border-emerald-700 active:border-b-0 active:mt-[34px]"
             >
-              <Text className="text-white font-bold text-2xl">Let's Learn! 🚀</Text>
+              <Text className="text-white font-bold text-2xl">Start Experiment! 🚀</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={onBack} className="mt-6 px-6 py-3">
@@ -192,81 +257,45 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // LEARN SUNLIGHT
-  if (phase === 'learn-sun') {
+  // TUTORIAL PHASE
+  if (phase === 'tutorial') {
     return (
-      <View className="flex-1 bg-gradient-to-b from-yellow-100 to-sky-100 p-6">
+      <View className="flex-1 bg-gradient-to-b from-blue-100 to-emerald-100 p-6">
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
           <Animated.View entering={SlideInDown.springify()} className="items-center">
 
-            <Text className="text-7xl mb-4">☀️</Text>
-
-            <LivingRuko emotion="thinking" size={120} />
-
-            <View className="bg-white/95 p-8 rounded-3xl mt-6 shadow-xl">
-              <Text className="text-2xl font-bold text-yellow-600 mb-4 text-center">
-                Ingredient #1: SUNLIGHT
-              </Text>
-
-              <Text className="text-lg text-slate-700 leading-7">
-                <Text className="font-bold">Sunlight</Text> gives plants ENERGY! ⚡
-                {'\n\n'}
-                Just like you need energy to run and play, plants need energy from the sun to make food!
-                {'\n\n'}
-                The green parts of plants (called <Text className="font-bold text-green-600">chlorophyll</Text>) catch the sunlight like a solar panel! 🌿
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => {
-                nextPhase();
-                setCurrentPlantStage(1);
-                playSound('success');
-              }}
-              className="bg-yellow-500 px-12 py-5 rounded-full mt-8 shadow-lg border-b-4 border-yellow-700 active:border-b-0 active:mt-[34px]"
-            >
-              <Text className="text-white font-bold text-2xl">Got it! ☀️</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // LEARN WATER
-  if (phase === 'learn-water') {
-    return (
-      <View className="flex-1 bg-gradient-to-b from-blue-100 to-sky-100 p-6">
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-          <Animated.View entering={SlideInDown.springify()} className="items-center">
-
-            <Text className="text-7xl mb-4">💧</Text>
-
-            <LivingRuko emotion="happy" size={120} />
+            <LivingRuko emotion="thinking" size={120} onPress={() => setRukoEmotion('excited')} />
 
             <View className="bg-white/95 p-8 rounded-3xl mt-6 shadow-xl">
               <Text className="text-2xl font-bold text-blue-600 mb-4 text-center">
-                Ingredient #2: WATER
+                🔬 How The Experiment Works
               </Text>
 
-              <Text className="text-lg text-slate-700 leading-7">
-                Plants drink water through their <Text className="font-bold text-amber-700">roots</Text>! 🌳
+              <Text className="text-lg text-slate-700 leading-7 mb-4">
+                You'll see a seed below. Your job is to figure out what it needs to grow!
                 {'\n\n'}
-                The water travels up through the stem to the leaves.
-                {'\n\n'}
-                Water has special tiny parts called <Text className="font-bold">H₂O</Text> (2 Hydrogen + 1 Oxygen atoms) that plants use to build their food! 🧪
+                Try different combinations of:
+              </Text>
+
+              <View className="space-y-2">
+                <Text className="text-base text-slate-700">☀️ <Text className="font-bold">Sunlight</Text> - Energy from the sun</Text>
+                <Text className="text-base text-slate-700">💧 <Text className="font-bold">Water</Text> - From the ground</Text>
+                <Text className="text-base text-slate-700">💨 <Text className="font-bold">CO₂</Text> - Gas from the air</Text>
+              </View>
+
+              <Text className="text-lg text-slate-700 leading-7 mt-4">
+                {'\n'}Tap the cards to add ingredients, then press "Try Growing!" to see what happens!
               </Text>
             </View>
 
             <TouchableOpacity
               onPress={() => {
-                nextPhase();
-                setCurrentPlantStage(2);
-                playSound('success');
+                setPhase('free-experiment');
+                setRukoMessage("Try different combinations! See what works!");
               }}
               className="bg-blue-500 px-12 py-5 rounded-full mt-8 shadow-lg border-b-4 border-blue-700 active:border-b-0 active:mt-[34px]"
             >
-              <Text className="text-white font-bold text-2xl">Cool! 💧</Text>
+              <Text className="text-white font-bold text-2xl">Got it! Let's Experiment!</Text>
             </TouchableOpacity>
           </Animated.View>
         </ScrollView>
@@ -274,157 +303,223 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // LEARN CO2
-  if (phase === 'learn-co2') {
+  // FREE EXPERIMENT PHASE
+  if (phase === 'free-experiment') {
     return (
-      <View className="flex-1 bg-gradient-to-b from-slate-100 to-sky-100 p-6">
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-          <Animated.View entering={SlideInDown.springify()} className="items-center">
+      <View className="flex-1 bg-gradient-to-b from-sky-200 to-emerald-50">
 
-            <Text className="text-7xl mb-4">💨</Text>
+        {/* Header */}
+        <View className="flex-row justify-between items-center px-6 pt-12 pb-4">
+          <TouchableOpacity
+            onPress={onBack}
+            className="bg-white/90 p-3 rounded-full shadow-sm"
+          >
+            <Text className="text-2xl">←</Text>
+          </TouchableOpacity>
 
-            <LivingRuko emotion="excited" size={120} />
+          <Text className="text-2xl font-bold text-emerald-800">🧪 Experiment</Text>
 
-            <View className="bg-white/95 p-8 rounded-3xl mt-6 shadow-xl">
-              <Text className="text-2xl font-bold text-slate-700 mb-4 text-center">
-                Ingredient #3: Carbon Dioxide (CO₂)
-              </Text>
+          <TouchableOpacity
+            onPress={resetExperiment}
+            className="bg-amber-100 px-4 py-2 rounded-full"
+          >
+            <Text className="text-sm font-bold text-amber-800">🔄 Reset</Text>
+          </TouchableOpacity>
+        </View>
 
-              <Text className="text-lg text-slate-700 leading-7">
-                <Text className="font-bold">CO₂</Text> is a gas in the air! 💨
-                {'\n\n'}
-                When you breathe OUT, you make CO₂! Then plants breathe it IN through tiny holes in their leaves! 🍃
-                {'\n\n'}
-                <Text className="font-bold text-emerald-600">Fun Fact:</Text> Plants and humans are a TEAM! We breathe oxygen, they breathe CO₂! 🤝
+        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+          {/* Plant Display */}
+          <View className="items-center my-8">
+            <Animated.View key={plantStage} entering={BounceIn.duration(400)}>
+              <Text style={{ fontSize: 140 }}>{getPlantEmoji()}</Text>
+            </Animated.View>
+            <Text className="text-6xl mt-2">🪴</Text>
+
+            <View className="bg-emerald-100 px-6 py-2 rounded-full mt-3">
+              <Text className="text-emerald-800 font-bold">
+                {plantStage === 0 ? 'Seed' : plantStage === 1 ? 'Sprouting...' : plantStage === 2 ? 'Growing...' : '🌟 Healthy Plant!'}
               </Text>
             </View>
+          </View>
 
-            <TouchableOpacity
-              onPress={nextPhase}
-              className="bg-slate-500 px-12 py-5 rounded-full mt-8 shadow-lg border-b-4 border-slate-700 active:border-b-0 active:mt-[34px]"
-            >
-              <Text className="text-white font-bold text-2xl">Amazing! 💨</Text>
-            </TouchableOpacity>
+          {/* Current Ingredients Display */}
+          <View className="mx-6 mb-4">
+            <Text className="text-center text-sm font-semibold text-slate-600 mb-2">
+              Current Ingredients:
+            </Text>
+            <View className="flex-row justify-center gap-2">
+              {hasSun && <Text className="text-3xl">☀️</Text>}
+              {hasWater && <Text className="text-3xl">💧</Text>}
+              {hasCO2 && <Text className="text-3xl">💨</Text>}
+              {!hasSun && !hasWater && !hasCO2 && (
+                <Text className="text-slate-400">None yet...</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Ruko's Message */}
+          <Animated.View
+            key={rukoMessage}
+            entering={FadeIn.duration(300)}
+            className="mx-6 mb-6"
+          >
+            <View className="flex-row items-center bg-white/95 p-5 rounded-3xl shadow-lg">
+              <LivingRuko
+                emotion={rukoEmotion}
+                size={70}
+                onPress={() => setRukoEmotion('excited')}
+              />
+              <View className="flex-1 ml-4">
+                <Text className="text-emerald-900 font-bold text-base leading-6">
+                  {rukoMessage}
+                </Text>
+              </View>
+            </View>
           </Animated.View>
+
+          {/* Ingredient Cards */}
+          <View className="px-6 mb-4">
+            <Text className="text-center text-sm font-semibold text-emerald-700 mb-3">
+              TAP TO ADD INGREDIENTS
+            </Text>
+
+            <View className="flex-row justify-center gap-3 mb-4">
+              <TouchableOpacity
+                onPress={() => {
+                  playSound('pop');
+                  setHasSun(!hasSun);
+                }}
+                className={`flex-1 max-w-[110px] p-5 rounded-2xl border-b-4 active:border-b-0 active:mt-1 shadow-sm ${
+                  hasSun
+                    ? 'bg-yellow-300 border-yellow-600'
+                    : 'bg-white border-slate-300'
+                }`}
+              >
+                <Text className="text-5xl mb-2 text-center">☀️</Text>
+                <Text className={`font-bold text-center text-sm ${hasSun ? 'text-yellow-900' : 'text-slate-600'}`}>
+                  Sunlight
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  playSound('pop');
+                  setHasWater(!hasWater);
+                }}
+                className={`flex-1 max-w-[110px] p-5 rounded-2xl border-b-4 active:border-b-0 active:mt-1 shadow-sm ${
+                  hasWater
+                    ? 'bg-blue-300 border-blue-600'
+                    : 'bg-white border-slate-300'
+                }`}
+              >
+                <Text className="text-5xl mb-2 text-center">💧</Text>
+                <Text className={`font-bold text-center text-sm ${hasWater ? 'text-blue-900' : 'text-slate-600'}`}>
+                  Water
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  playSound('pop');
+                  setHasCO2(!hasCO2);
+                }}
+                className={`flex-1 max-w-[110px] p-5 rounded-2xl border-b-4 active:border-b-0 active:mt-1 shadow-sm ${
+                  hasCO2
+                    ? 'bg-slate-300 border-slate-600'
+                    : 'bg-white border-slate-300'
+                }`}
+              >
+                <Text className="text-5xl mb-2 text-center">💨</Text>
+                <Text className={`font-bold text-center text-xs ${hasCO2 ? 'text-slate-900' : 'text-slate-600'}`}>
+                  CO₂
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Try Growing Button */}
+            <TouchableOpacity
+              onPress={handleExperiment}
+              className="bg-emerald-500 py-5 rounded-2xl shadow-lg border-b-4 border-emerald-700 active:border-b-0 active:mt-1"
+            >
+              <Text className="text-white font-bold text-xl text-center">
+                🌱 Try Growing!
+              </Text>
+            </TouchableOpacity>
+
+            {/* Attempts Counter */}
+            <View className="mt-4 bg-blue-50 p-3 rounded-xl">
+              <Text className="text-center text-sm text-blue-800">
+                Experiments tried: {attempts.length}
+              </Text>
+            </View>
+          </View>
         </ScrollView>
       </View>
     );
   }
 
-  // QUIZ: INGREDIENTS
-  if (phase === 'quiz-ingredients') {
+  // QUIZ PHASE
+  if (phase === 'quiz' && quizQuestions.length > 0) {
+    const currentQ = quizQuestions[currentQuizIndex];
+
     return (
       <View className="flex-1 bg-gradient-to-b from-purple-100 to-pink-100 p-6">
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#8B5CF6" />
+          ) : (
+            <Animated.View entering={FadeIn.duration(400)} className="items-center">
 
-            <Text className="text-3xl font-bold text-purple-800 mb-4 text-center">
-              🧠 Quiz Time!
-            </Text>
-
-            <PlantDisplay />
-
-            <LivingRuko emotion={rukoEmotion} size={100} />
-
-            <View className="bg-white/95 p-6 rounded-3xl mt-4 shadow-lg mb-6">
-              <Text className="text-xl font-bold text-slate-800 mb-4 text-center">
-                {ingredientsQuiz.question}
+              <Text className="text-3xl font-bold text-purple-800 mb-4 text-center">
+                🧠 Knowledge Check
               </Text>
 
-              {rukoEmotion === 'sad' && attempts > 0 && (
+              <Text className="text-lg text-purple-600 mb-4">
+                Question {currentQuizIndex + 1} of {quizQuestions.length}
+              </Text>
+
+              <LivingRuko emotion={rukoEmotion} size={100} onPress={() => setRukoEmotion('excited')} />
+
+              <View className="bg-white/95 p-6 rounded-3xl mt-4 shadow-lg mb-6 w-full">
+                <Text className="text-xl font-bold text-slate-800 mb-4 text-center">
+                  {currentQ.question}
+                </Text>
+
                 <Animated.View entering={FadeIn}>
-                  <Text className="text-base text-indigo-600 italic text-center mb-3">
-                    💡 Hint: {ingredientsQuiz.rukoHint}
+                  <Text className="text-base text-indigo-600 italic text-center">
+                    💡 {rukoMessage}
                   </Text>
                 </Animated.View>
-              )}
-            </View>
+              </View>
 
-            <View className="w-full space-y-3">
-              {ingredientsQuiz.options.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => handleQuizAnswer(index, ingredientsQuiz)}
-                  className="bg-white p-5 rounded-2xl shadow-md border-2 border-purple-200 active:scale-95"
-                >
-                  <Text className="text-lg text-slate-800 font-semibold text-center">
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+              <View className="w-full space-y-3">
+                {currentQ.options.map((option, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => handleQuizAnswer(index)}
+                    className="bg-white p-5 rounded-2xl shadow-md border-2 border-purple-200 active:scale-95"
+                  >
+                    <Text className="text-lg text-slate-800 font-semibold text-center">
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            {rukoEmotion === 'excited' && (
-              <Animated.View entering={BounceIn} className="mt-4">
-                <Text className="text-2xl text-green-600 font-bold text-center">
-                  🎉 Perfect! {ingredientsQuiz.explanation}
+              <View className="mt-6 bg-purple-100 px-6 py-3 rounded-full">
+                <Text className="text-purple-800 font-bold">
+                  Score: {quizScore} points
                 </Text>
-              </Animated.View>
-            )}
-          </Animated.View>
+              </View>
+            </Animated.View>
+          )}
         </ScrollView>
       </View>
     );
   }
 
-  // QUIZ: WHAT PLANTS MAKE
-  if (phase === 'quiz-order') {
-    return (
-      <View className="flex-1 bg-gradient-to-b from-green-100 to-blue-100 p-6">
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
-          <Animated.View entering={FadeIn.duration(400)} className="items-center">
-
-            <Text className="text-3xl font-bold text-green-800 mb-4 text-center">
-              🧠 Final Question!
-            </Text>
-
-            <PlantDisplay />
-
-            <LivingRuko emotion={rukoEmotion} size={100} />
-
-            <View className="bg-white/95 p-6 rounded-3xl mt-4 shadow-lg mb-6">
-              <Text className="text-xl font-bold text-slate-800 mb-4 text-center">
-                {orderQuiz.question}
-              </Text>
-
-              {rukoEmotion === 'sad' && attempts > 1 && (
-                <Animated.View entering={FadeIn}>
-                  <Text className="text-base text-indigo-600 italic text-center mb-3">
-                    💡 Hint: {orderQuiz.rukoHint}
-                  </Text>
-                </Animated.View>
-              )}
-            </View>
-
-            <View className="w-full space-y-3">
-              {orderQuiz.options.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => handleQuizAnswer(index, orderQuiz)}
-                  className="bg-white p-5 rounded-2xl shadow-md border-2 border-green-200 active:scale-95"
-                >
-                  <Text className="text-lg text-slate-800 font-semibold text-center">
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {rukoEmotion === 'excited' && (
-              <Animated.View entering={BounceIn} className="mt-4">
-                <Text className="text-2xl text-green-600 font-bold text-center">
-                  🎉 Correct! {orderQuiz.explanation}
-                </Text>
-              </Animated.View>
-            )}
-          </Animated.View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // CELEBRATION / SUCCESS
-  if (phase === 'celebration') {
+  // SUCCESS SCREEN
+  if (phase === 'success') {
     return (
       <View className="flex-1 bg-gradient-to-b from-yellow-100 to-green-100 p-6">
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
@@ -432,31 +527,33 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
 
             <Text className="text-6xl mb-4">🎉</Text>
             <Text className="text-5xl font-extrabold text-emerald-600 text-center mb-6">
-              You're a Plant Scientist!
+              Plant Scientist!
             </Text>
 
-            <PlantDisplay />
+            <Text style={{ fontSize: 120 }}>🌻</Text>
 
-            <LivingRuko emotion="excited" size={140} />
+            <LivingRuko emotion="excited" size={140} onPress={() => setRukoEmotion('happy')} />
 
-            <View className="bg-white/95 p-8 rounded-3xl mt-6 shadow-xl">
+            <View className="bg-white/95 p-8 rounded-3xl mt-6 shadow-xl w-full">
               <Text className="text-2xl font-bold text-emerald-800 text-center mb-4">
-                ⭐ Score: {score} points
+                ⭐ Final Score: {quizScore} points
               </Text>
 
-              <View className="bg-emerald-50 p-4 rounded-2xl">
+              <View className="bg-emerald-50 p-4 rounded-2xl mb-4">
                 <Text className="text-lg font-bold text-emerald-900 text-center mb-3">
-                  🌿 The Magic Recipe:
+                  🌿 What You Learned:
                 </Text>
                 <Text className="text-base text-slate-700 leading-7">
-                  ☀️ Sunlight (Energy){'\n'}
-                  💧 Water (H₂O){'\n'}
-                  💨 Carbon Dioxide (CO₂){'\n'}
-                  {'\n'}
-                  <Text className="font-bold">Mix them together →</Text>{'\n'}
-                  {'\n'}
-                  🍬 Glucose (Plant Food!){'\n'}
-                  💨 Oxygen (For us to breathe!)
+                  ✅ Photosynthesis = Making food with light{'\n'}
+                  ✅ Need: Sun ☀️ + Water 💧 + CO₂ 💨{'\n'}
+                  ✅ Makes: Glucose 🍬 + Oxygen 💨{'\n'}
+                  ✅ Happens in leaves with chlorophyll!
+                </Text>
+              </View>
+
+              <View className="bg-blue-50 p-4 rounded-2xl">
+                <Text className="text-center text-blue-800">
+                  Experiments: {attempts.length} | Lessons Completed: 1
                 </Text>
               </View>
             </View>
@@ -465,14 +562,15 @@ export default function PhotosynthesisGame({ onBack }: { onBack: () => void }) {
               <TouchableOpacity
                 onPress={() => {
                   setPhase('intro');
-                  setScore(0);
-                  setAttempts(0);
-                  setCurrentPlantStage(0);
-                  setRukoEmotion('happy');
+                  resetExperiment();
+                  setAttempts([]);
+                  setQuizScore(0);
+                  setCurrentQuizIndex(0);
+                  loadAIContent();
                 }}
                 className="bg-indigo-500 px-8 py-4 rounded-full shadow-lg border-b-4 border-indigo-700 active:border-b-0 active:mt-1"
               >
-                <Text className="text-white font-bold text-lg">🔄 Play Again</Text>
+                <Text className="text-white font-bold text-lg">🔄 Try Again</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

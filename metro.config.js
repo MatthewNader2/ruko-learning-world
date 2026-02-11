@@ -3,25 +3,24 @@ const { withNativeWind } = require("nativewind/metro");
 
 const config = getDefaultConfig(__dirname);
 
-// 1. Enable support for modern .mjs files (used by AI libraries)
-config.resolver.sourceExts.push("mjs");
-config.resolver.sourceExts.push("cjs");
+// 1. DISABLE Package Exports
+// This stops Metro from looking at the "exports" field, which usually points to the broken ESM files.
+config.resolver.unstable_enablePackageExports = false;
 
-// 2. Tell Metro to look at the "exports" field in package.json
-config.resolver.unstable_enablePackageExports = true;
+// 2. FORCE "Main" Field Priority
+// We tell Metro: "Look for 'react-native' first. If not found, use 'browser'. Finally, use 'main'."
+// IMPORTANT: We explicitly REMOVED 'module' from this list to avoid ESM files.
+config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 
-// 3. Web-specific transformer configuration
+// 3. Keep Reanimated happy
 config.transformer = {
   ...config.transformer,
   getTransformOptions: async () => ({
     transform: {
       experimentalImportSupport: false,
-      inlineRequires: true,
+      inlineRequires: false,
     },
   }),
 };
-
-// 4. Platform-specific resolution for problematic packages
-config.resolver.resolverMainFields = ['browser', 'module', 'main'];
 
 module.exports = withNativeWind(config, { input: "./global.css" });
