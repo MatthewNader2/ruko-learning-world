@@ -1,22 +1,23 @@
 // app/index.tsx
-import React, { useState, useEffect, useRef } from "react";
+import { useRootNavigationState, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
   ActivityIndicator,
-  Platform,
+  Alert,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useRouter, useRootNavigationState } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useUserStore } from "../src/store/userStore";
 import LivingRuko from "../src/components/ruko/LivingRuko";
+import { useAudioStore } from "../src/store/audioStore";
+import { useUserStore } from "../src/store/userStore";
 
 const { width } = Dimensions.get("window");
 
@@ -42,6 +43,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const { setUserProfile, hasCompletedOnboarding } = useUserStore();
+  const { isMuted, toggleMute } = useAudioStore();
 
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -309,11 +311,10 @@ export default function OnboardingScreen() {
                   <TouchableOpacity
                     key={item.id}
                     onPress={() => toggleInterest(item.id)}
-                    className={`px-4 py-3 rounded-2xl border-2 flex-row items-center gap-2 ${
-                      isSelected
+                    className={`px-4 py-3 rounded-2xl border-2 flex-row items-center gap-2 ${isSelected
                         ? "border-transparent"
                         : "bg-white border-slate-100"
-                    }`}
+                      }`}
                     style={{
                       backgroundColor: isSelected ? item.color : "white",
                       shadowColor: isSelected ? item.color : "#000",
@@ -375,11 +376,10 @@ export default function OnboardingScreen() {
 
             <TouchableOpacity
               onPress={() => setLearningStyle("visual")}
-              className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${
-                learningStyle === "visual"
+              className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${learningStyle === "visual"
                   ? "border-violet-500"
                   : "bg-white border-slate-100"
-              }`}
+                }`}
               style={{
                 backgroundColor:
                   learningStyle === "visual" ? "#f5f3ff" : "white",
@@ -398,11 +398,10 @@ export default function OnboardingScreen() {
               </View>
               <View className="flex-1">
                 <Text
-                  className={`text-lg font-bold mb-1 ${
-                    learningStyle === "visual"
+                  className={`text-lg font-bold mb-1 ${learningStyle === "visual"
                       ? "text-violet-900"
                       : "text-slate-800"
-                  }`}
+                    }`}
                 >
                   Visual Learner
                 </Text>
@@ -422,11 +421,10 @@ export default function OnboardingScreen() {
 
             <TouchableOpacity
               onPress={() => setLearningStyle("reading")}
-              className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${
-                learningStyle === "reading"
+              className={`p-5 mb-4 rounded-2xl border-2 flex-row items-center ${learningStyle === "reading"
                   ? "border-blue-500"
                   : "bg-white border-slate-100"
-              }`}
+                }`}
               style={{
                 backgroundColor:
                   learningStyle === "reading" ? "#eff6ff" : "white",
@@ -445,11 +443,10 @@ export default function OnboardingScreen() {
               </View>
               <View className="flex-1">
                 <Text
-                  className={`text-lg font-bold mb-1 ${
-                    learningStyle === "reading"
+                  className={`text-lg font-bold mb-1 ${learningStyle === "reading"
                       ? "text-blue-900"
                       : "text-slate-800"
-                  }`}
+                    }`}
                 >
                   Reading Learner
                 </Text>
@@ -469,11 +466,10 @@ export default function OnboardingScreen() {
 
             <TouchableOpacity
               onPress={() => setLearningStyle("mixed")}
-              className={`p-5 mb-8 rounded-2xl border-2 flex-row items-center ${
-                learningStyle === "mixed"
+              className={`p-5 mb-8 rounded-2xl border-2 flex-row items-center ${learningStyle === "mixed"
                   ? "border-emerald-500"
                   : "bg-white border-slate-100"
-              }`}
+                }`}
               style={{
                 backgroundColor:
                   learningStyle === "mixed" ? "#ecfdf5" : "white",
@@ -492,11 +488,10 @@ export default function OnboardingScreen() {
               </View>
               <View className="flex-1">
                 <Text
-                  className={`text-lg font-bold mb-1 ${
-                    learningStyle === "mixed"
+                  className={`text-lg font-bold mb-1 ${learningStyle === "mixed"
                       ? "text-emerald-900"
                       : "text-slate-800"
-                  }`}
+                    }`}
                 >
                   Mixed Style
                 </Text>
@@ -546,6 +541,12 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
+      <TouchableOpacity
+        onPress={toggleMute}
+        className="absolute top-12 right-6 z-50 bg-white/80 p-2 rounded-full shadow-sm"
+      >
+        <Text className="text-xl">{isMuted ? "🔇" : "🔊"}</Text>
+      </TouchableOpacity>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -564,31 +565,28 @@ export default function OnboardingScreen() {
               {STEPS.map((s, idx) => (
                 <View key={idx} className="items-center">
                   <View
-                    className={`w-10 h-10 rounded-full items-center justify-center border-2 ${
-                      step > idx + 1
+                    className={`w-10 h-10 rounded-full items-center justify-center border-2 ${step > idx + 1
                         ? "bg-indigo-600 border-indigo-600"
                         : step === idx + 1
                           ? "bg-white border-indigo-600"
                           : "bg-slate-100 border-slate-200"
-                    }`}
+                      }`}
                   >
                     <Text
-                      className={`text-lg ${
-                        step > idx + 1
+                      className={`text-lg ${step > idx + 1
                           ? "text-white"
                           : step === idx + 1
                             ? "text-indigo-600"
                             : "text-slate-400"
-                      }`}
+                        }`}
                     >
                       {step > idx + 1 ? "✓" : s.emoji}
                     </Text>
                   </View>
                   {idx < STEPS.length - 1 && (
                     <View
-                      className={`absolute h-0.5 w-8 top-5 left-8 ${
-                        step > idx + 1 ? "bg-indigo-600" : "bg-slate-200"
-                      }`}
+                      className={`absolute h-0.5 w-8 top-5 left-8 ${step > idx + 1 ? "bg-indigo-600" : "bg-slate-200"
+                        }`}
                     />
                   )}
                 </View>
@@ -598,9 +596,8 @@ export default function OnboardingScreen() {
               {STEPS.map((s, idx) => (
                 <Text
                   key={idx}
-                  className={`text-xs font-medium ${
-                    step === idx + 1 ? "text-indigo-600" : "text-slate-400"
-                  }`}
+                  className={`text-xs font-medium ${step === idx + 1 ? "text-indigo-600" : "text-slate-400"
+                    }`}
                 >
                   {s.title}
                 </Text>

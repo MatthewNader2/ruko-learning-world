@@ -1,11 +1,14 @@
 // app/_layout.tsx
-import "../global.css";
 import { Slot } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
+import "../global.css";
+import { useBackgroundMusic } from "../src/hooks/useBackgroundMusic";
 
 export default function Layout() {
+  useBackgroundMusic();
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />

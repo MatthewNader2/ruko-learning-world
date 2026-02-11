@@ -1,28 +1,29 @@
 // app/home.tsx
-import React, { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  Image,
-  ScrollView,
-  Dimensions,
-  Alert,
-  Pressable,
-  Platform,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
+import {
+  Alert,
+  Dimensions,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useUserStore } from "../src/store/userStore";
 import RukoAvatar from "../src/components/ruko/RukoAvatar";
+import CodingGame from "../src/features/coding-class/CodingGame";
 import PhotosynthesisGame from "../src/features/science-class/PhotosynthesisGame";
 import RukoChat from "../src/features/shared/RukoChat";
-import CodingGame from "../src/features/coding-class/CodingGame";
+import { useAudioStore } from "../src/store/audioStore";
+import { useUserStore } from "../src/store/userStore";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 56) / 2;
@@ -170,6 +171,7 @@ const ClassCard = ({
 
 export default function HomeScreen() {
   const { name, reset, level, xp } = useUserStore();
+  const { isMuted, toggleMute } = useAudioStore();
   const router = useRouter();
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({
     type: "home",
@@ -256,30 +258,49 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <View className="items-center">
-            <View
-              className="w-16 h-16 rounded-2xl items-center justify-center border-4 border-white"
-              style={{
-                backgroundColor: "#6366f1",
-                ...Platform.select({
-                  web: { boxShadow: "0px 4px 8px rgba(99,102,241,0.3)" },
-                  default: {
-                    shadowColor: "#6366f1",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 6,
-                  },
-                }),
-              }}
+          <View className="flex-row items-center gap-4">
+            <Pressable
+              onPress={toggleMute}
+              className="w-12 h-12 rounded-full bg-white border border-slate-200 items-center justify-center"
+              style={Platform.select({
+                web: { boxShadow: "0px 2px 4px rgba(0,0,0,0.05)" },
+                default: {
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 4,
+                  elevation: 2,
+                },
+              })}
             >
-              <Text className="text-white font-extrabold text-2xl">
-                {level}
+              <Text className="text-xl">{isMuted ? "🔇" : "🔊"}</Text>
+            </Pressable>
+
+            <View className="items-center">
+              <View
+                className="w-16 h-16 rounded-2xl items-center justify-center border-4 border-white"
+                style={{
+                  backgroundColor: "#6366f1",
+                  ...Platform.select({
+                    web: { boxShadow: "0px 4px 8px rgba(99,102,241,0.3)" },
+                    default: {
+                      shadowColor: "#6366f1",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 8,
+                      elevation: 6,
+                    },
+                  }),
+                }}
+              >
+                <Text className="text-white font-extrabold text-2xl">
+                  {level}
+                </Text>
+              </View>
+              <Text className="text-indigo-600 font-bold text-xs mt-2 uppercase tracking-wider">
+                Level
               </Text>
             </View>
-            <Text className="text-indigo-600 font-bold text-xs mt-2 uppercase tracking-wider">
-              Level
-            </Text>
           </View>
         </View>
 
@@ -437,7 +458,7 @@ export default function HomeScreen() {
             color="bg-amber-100"
             accentColor="#f59e0b"
             icon={require("../assets/images/icons/history.png")}
-            onPressLearn={() => {}}
+            onPressLearn={() => { }}
             onPressChat={() => handleChatPress("history")}
             isLocked={true}
           />
@@ -449,7 +470,7 @@ export default function HomeScreen() {
             color="bg-rose-100"
             accentColor="#f43f5e"
             emoji="🎓"
-            onPressLearn={() => {}}
+            onPressLearn={() => { }}
             onPressChat={() =>
               Alert.alert(
                 "Coming Soon",
